@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+*.log
+*.tmp
+
+postgres_data/
+redis_data/
+volumes/

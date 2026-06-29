@@ -1,0 +1,58 @@
+# LiteLLM AI Gateway config for Synology Docker.
+# Provider secrets are loaded from .env with os.environ/VARIABLE.
+
+model_list:
+  - model_name: fast
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  - model_name: code
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: reasoning
+    litellm_params:
+      model: openai/gpt-5.5
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: vision
+    litellm_params:
+      model: openai/gpt-5.5
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: openrouter
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-4.5
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: local
+    litellm_params:
+      model: ollama_chat/qwen2.5-coder:7b
+      api_base: os.environ/OLLAMA_API_BASE
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 120
+  num_retries: 1
+  cache: true
+  cache_params:
+    type: redis
+    redis_url: os.environ/REDIS_URL
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+# Optional fallback shape. Enable once the aliases above are working and you
+# know which quality downgrade path you want.
+#
+# router_settings:
+#   fallbacks:
+#     - reasoning:
+#         - code
+#     - code:
+#         - fast
+#     - fast:
+#         - local
