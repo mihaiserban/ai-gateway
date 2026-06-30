@@ -222,9 +222,9 @@ Important environment values:
 | `LITELLM_SALT_KEY` | LiteLLM encryption salt for stored credentials. Do not rotate casually after creating keys or credentials. |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | Postgres settings for LiteLLM state. |
 | `REDIS_PASSWORD`, `REDIS_URL` | Redis auth and connection string for LiteLLM cache and router sessions. |
-| `DEEPSEEK_API_KEY` | Provider key for `fast` and `deepseek-pro`. |
-| `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for OpenCode Go aliases. |
-| `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama local or cloud settings. |
+| `DEEPSEEK_API_KEY` | Provider key for DeepSeek model fallbacks. |
+| `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for OpenCode Go aliases (primary path for most model families). |
+| `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama local or cloud settings (fallback path; model IDs must exist on the Ollama endpoint). |
 
 Edit model and routing values in `src/gateway.config.yaml`, then regenerate the
 runtime config files:
@@ -282,7 +282,9 @@ port `4100` directly to the public internet.
 ## Create And Use Virtual Keys
 
 Agents should use LiteLLM virtual keys, not `LITELLM_MASTER_KEY`. Create a key
-from inside the LiteLLM container so port `4000` remains internal:
+from inside the LiteLLM container so port `4000` remains internal. The
+`all-models` allowlist includes every current alias, so the router can fall
+back freely:
 
 ```bash
 cd src
@@ -290,9 +292,17 @@ cd src
 docker compose exec litellm python3 -c "
 import os, json, urllib.request
 body = json.dumps({
-    'key_alias': 'codex-cli',
-    'models': ['opencodego-fast', 'opencodego-code', 'fast', 'deepseek-pro'],
-    'max_budget': 5.0
+    'key_alias': 'all-models',
+    'models': [
+        'explorer', 'planner', 'coder', 'coder-fast', 'vision',
+        'deepseek-v4-flash', 'glm-5.2', 'kimi-k2.7-code', 'deepseek-v4-pro', 'kimi-k2.6',
+        'deepseek-v4-flash-ollama', 'deepseek-v4-flash-deepseek', 'deepseek-v4-flash-opencodego',
+        'glm-5.2-ollama', 'glm-5.2-opencodego',
+        'kimi-k2.7-code-ollama', 'kimi-k2.7-code-opencodego',
+        'deepseek-v4-pro-opencodego', 'deepseek-v4-pro-ollama', 'deepseek-v4-pro-deepseek',
+        'kimi-k2.6-ollama', 'kimi-k2.6-opencodego'
+    ],
+    'max_budget': 50.0
 }).encode()
 req = urllib.request.Request(
     'http://localhost:4000/key/generate',

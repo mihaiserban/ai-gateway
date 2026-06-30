@@ -123,6 +123,21 @@ models:
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
 
+  - name: deepseek-v4-pro-opencodego
+    litellm_model: openai/deepseek-v4-pro
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    timeout: 120
+    additional_drop_params:
+      - reasoningSummary
+    model_info:
+      role: provider-deployment
+      family: deepseek-v4-pro
+      provider: opencodego
+      reasoning_level: high
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
   - name: deepseek-v4-pro-ollama
     litellm_model: ollama_chat/deepseek-v4-pro
     api_base_env: OLLAMA_API_BASE
@@ -178,53 +193,54 @@ models:
 
 aliases:
   - name: deepseek-v4-flash
-    target: deepseek-v4-flash-ollama
+    target: deepseek-v4-flash-opencodego
     timeout: 60
     fallbacks:
       - deepseek-v4-flash-deepseek
-      - deepseek-v4-flash-opencodego
+      - deepseek-v4-flash-ollama
     model_info:
       role: model-family
       family: deepseek-v4-flash
       reasoning_level: low
 
   - name: glm-5.2
-    target: glm-5.2-ollama
+    target: glm-5.2-opencodego
     timeout: 120
     fallbacks:
-      - glm-5.2-opencodego
       - kimi-k2.7-code-opencodego
+      - glm-5.2-ollama
     model_info:
       role: model-family
       family: glm-5.2
       reasoning_level: high
 
   - name: kimi-k2.7-code
-    target: kimi-k2.7-code-ollama
+    target: kimi-k2.7-code-opencodego
     timeout: 120
     fallbacks:
-      - kimi-k2.7-code-opencodego
       - deepseek-v4-pro-deepseek
+      - kimi-k2.7-code-ollama
     model_info:
       role: model-family
       family: kimi-k2.7-code
       reasoning_level: medium
 
   - name: deepseek-v4-pro
-    target: deepseek-v4-pro-ollama
+    target: deepseek-v4-pro-opencodego
     timeout: 120
     fallbacks:
       - deepseek-v4-pro-deepseek
+      - deepseek-v4-pro-ollama
     model_info:
       role: model-family
       family: deepseek-v4-pro
       reasoning_level: high
 
   - name: kimi-k2.6
-    target: kimi-k2.6-ollama
+    target: kimi-k2.6-opencodego
     timeout: 60
     fallbacks:
-      - kimi-k2.6-opencodego
+      - kimi-k2.6-ollama
     model_info:
       role: model-family
       family: kimi-k2.6
@@ -235,7 +251,7 @@ aliases:
     timeout: 60
     fallbacks:
       - deepseek-v4-flash-deepseek
-      - deepseek-v4-flash-opencodego
+      - deepseek-v4-flash-ollama
     model_info:
       role: task-alias
       task: explore
@@ -245,9 +261,9 @@ aliases:
     target: glm-5.2
     timeout: 120
     fallbacks:
-      - glm-5.2-opencodego
-      - deepseek-v4-pro-deepseek
       - kimi-k2.7-code-opencodego
+      - deepseek-v4-pro-deepseek
+      - glm-5.2-ollama
     model_info:
       role: task-alias
       task: plan
@@ -257,8 +273,8 @@ aliases:
     target: kimi-k2.7-code
     timeout: 120
     fallbacks:
-      - kimi-k2.7-code-opencodego
       - deepseek-v4-pro-deepseek
+      - kimi-k2.7-code-ollama
     model_info:
       role: task-alias
       task: build
@@ -269,7 +285,7 @@ aliases:
     timeout: 60
     fallbacks:
       - deepseek-v4-flash-deepseek
-      - deepseek-v4-flash-opencodego
+      - deepseek-v4-flash-ollama
       - kimi-k2.6-opencodego
     model_info:
       role: task-alias
@@ -280,7 +296,7 @@ aliases:
     target: kimi-k2.6
     timeout: 120
     fallbacks:
-      - kimi-k2.6-opencodego
+      - kimi-k2.6-ollama
     model_info:
       role: task-alias
       task: vision

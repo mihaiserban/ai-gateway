@@ -222,23 +222,33 @@ after a `docker compose down -v` that wipes Postgres):
 
 | Agent / Tool   | Key alias      | Allowlist                                         | Max budget |
 | -------------- | -------------- | ------------------------------------------------- | ---------- |
-| Codex CLI      | `codex-cli`    | `opencodego-fast`, `opencodego-code`, `fast`, `deepseek-pro` | $5.00      |
-| Summarizer     | `summarizer`   | `fast`, `ollama-cloud`                            | $2.00      |
+| Codex CLI      | `all-models`   | every current alias (see below)                   | $50.00     |
+| Summarizer     | `summarizer`   | `explorer`, `coder-fast`                          | $2.00      |
 
 The `summarizer` key is intentionally restricted to the cheaper aliases so a
-background summarizer cannot spend on `deepseek-pro` or `opencodego-*`.
+background summarizer cannot spend on `coder`, `deepseek-v4-pro`, or other
+expensive models.
 
 ### Creating A Virtual Key
 
-Create a virtual key (admin only, with the master key):
+Create a virtual key (admin only, with the master key). The `all-models` key
+below lists every current alias, so the router can use any model or fallback:
 
 ```bash
 docker compose exec litellm python3 -c "
 import os, json, urllib.request
 body = json.dumps({
-    'key_alias': 'codex-cli',
-    'models': ['opencodego-fast', 'opencodego-code', 'fast', 'deepseek-pro'],
-    'max_budget': 5.0
+    'key_alias': 'all-models',
+    'models': [
+        'explorer', 'planner', 'coder', 'coder-fast', 'vision',
+        'deepseek-v4-flash', 'glm-5.2', 'kimi-k2.7-code', 'deepseek-v4-pro', 'kimi-k2.6',
+        'deepseek-v4-flash-ollama', 'deepseek-v4-flash-deepseek', 'deepseek-v4-flash-opencodego',
+        'glm-5.2-ollama', 'glm-5.2-opencodego',
+        'kimi-k2.7-code-ollama', 'kimi-k2.7-code-opencodego',
+        'deepseek-v4-pro-opencodego', 'deepseek-v4-pro-ollama', 'deepseek-v4-pro-deepseek',
+        'kimi-k2.6-ollama', 'kimi-k2.6-opencodego'
+    ],
+    'max_budget': 50.0
 }).encode()
 req = urllib.request.Request(
     'http://localhost:4000/key/generate',
@@ -254,8 +264,8 @@ print(json.load(urllib.request.urlopen(req, timeout=30))['key'])
 ```
 
 Use the returned `key` value as the `Authorization: Bearer <key>` for that
-agent. Replace `reasoning` with an alias you have configured if it is not in
-`gateway.config.yaml`.
+agent. If a key is missing a fallback alias, LiteLLM will reject the request
+when the router tries to use it.
 
 The master key is only for admin setup (creating keys, viewing spend). Do not
 put it in agent configs.
@@ -275,8 +285,10 @@ not configured as an upstream provider.
 
 ## Active Aliases
 
-Use model aliases from `gateway.config.yaml`. All primaries target Ollama Cloud
-(largest subscription). Fallback chains use different providers for resilience.
+Use model aliases from `gateway.config.yaml`. Primaries target OpenCode Go
+because it hosts the exact model IDs used in the catalog. Fallback chains use
+DeepSeek and Ollama where configured; Ollama fallbacks only work if the model
+IDs also exist on your Ollama endpoint.
 
 ### Semantic aliases (use these in agents)
 
