@@ -490,6 +490,8 @@ Readiness returns `503`:
 
 - `litellm: degraded` usually means LiteLLM is still starting or its config/env
   is invalid.
+- During deploys, the router container may start before LiteLLM is ready;
+  `/readyz` remains `503` until LiteLLM finishes warming up.
 - `redis: degraded` usually means `REDIS_URL` or `REDIS_PASSWORD` is wrong.
 - `postgres: degraded` usually means `DATABASE_URL`, Postgres credentials, or
   the Postgres service is unavailable.
