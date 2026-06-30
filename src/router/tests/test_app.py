@@ -155,6 +155,150 @@ def test_fallback_session_id_is_anonymous_without_messages():
 
 
 @pytest.mark.asyncio
+async def test_chat_does_not_write_session_on_failed_upstream():
+    seen_models = []
+    attempts_by_model: dict[str, int] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen_models.append(model)
+        attempts_by_model[model] = attempts_by_model.get(model, 0) + 1
+        if model in {"opencodego-fast", "fast"} and attempts_by_model[model] == 1:
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "poison-test"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+        assert response.status_code == 503
+        assert seen_models == ["opencodego-fast", "fast"]
+
+        seen_models.clear()
+        response2 = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "poison-test"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response2.status_code == 200
+    assert seen_models == ["opencodego-fast"]
+    assert response2.headers["X-Gateway-Reason"] == "classified"
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_next_fallback_on_retryable_error():
+    seen_models = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen_models.append(model)
+        if model == "opencodego-fast":
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "retry-test"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 200
+    assert seen_models == ["opencodego-fast", "fast"]
+    assert response.headers["X-Gateway-Model"] == "fast"
+    assert response.headers["X-Gateway-Reason"] == "classified"
+    assert response.headers["X-Gateway-Fallback-From"] == "opencodego-fast"
+    assert response.headers["X-Gateway-Fallback-Count"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_chat_does_not_retry_on_client_error():
+    seen_models = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen_models.append(json.loads(request.content)["model"])
+        return httpx.Response(400, json={"error": "bad request"})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "no-retry-test"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 400
+    assert seen_models == ["opencodego-fast"]
+    assert "X-Gateway-Fallback-From" not in response.headers
+    assert response.headers.get("X-Gateway-Fallback-Count") == "0"
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_on_timeout_exception():
+    seen_models = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen_models.append(model)
+        if model == "opencodego-fast":
+            raise httpx.TimeoutException("request timed out")
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "timeout-test"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 200
+    assert seen_models == ["opencodego-fast", "fast"]
+    assert response.headers["X-Gateway-Fallback-Count"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_chat_stores_fallback_count_in_session():
+    seen_models = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen_models.append(model)
+        if model == "opencodego-fast":
+            return httpx.Response(502, json={"error": "bad gateway"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "fallback-count-test"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 200
+    session = await app.state.session_store.get("fallback-count-test")
+    assert session is not None
+    assert session["model"] == "fast"
+    assert session["fallback_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_unsupported_v1_path_returns_501():
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None)
 

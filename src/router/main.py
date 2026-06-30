@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from router.redaction import redact_payload
-from router.routing import RouteConfig, choose_model
+from router.routing import RouteConfig, choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
 
 
@@ -47,25 +47,70 @@ def create_app(
         decision = choose_model(body, session=session, now=time.time(), config=app.state.route_config)
 
         upstream_body = redact_payload(body)
-        upstream_body["model"] = decision.model
 
-        await app.state.session_store.set(
-            session_id,
-            {
-                "model": decision.model,
-                "last_used_ts": time.time(),
-                "classification": decision.reason,
-                "fallback_count": 0,
-            },
-            ttl_seconds=app.state.route_config.cache_ttl_seconds,
-        )
+        fallback_count = int(session.get("fallback_count", 0)) if session else 0
+        original_model = decision.model
+        current_model = original_model
+        last_response: Response | None = None
+        last_exception: Exception | None = None
 
-        return await _proxy_json(
-            request,
-            "/v1/chat/completions",
-            upstream_body,
-            extra_headers={"X-Gateway-Model": decision.model, "X-Gateway-Reason": decision.reason},
-        )
+        for attempt in range(2):
+            upstream_body["model"] = current_model
+            try:
+                response = await _proxy_json(
+                    request,
+                    "/v1/chat/completions",
+                    upstream_body,
+                )
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+                last_exception = exc
+                if attempt == 1:
+                    break
+                next_model = next_fallback(original_model, fallback_count, app.state.route_config)
+                if next_model is None:
+                    break
+                current_model = next_model
+                fallback_count += 1
+                continue
+
+            last_response = response
+            if _is_success(response):
+                break
+            if not _is_retryable_status(response.status_code) or attempt == 1:
+                break
+            next_model = next_fallback(original_model, fallback_count, app.state.route_config)
+            if next_model is None:
+                break
+            current_model = next_model
+            fallback_count += 1
+
+        if last_response is not None and _is_success(last_response):
+            await app.state.session_store.set(
+                session_id,
+                {
+                    "model": current_model,
+                    "last_used_ts": time.time(),
+                    "classification": decision.reason,
+                    "fallback_count": fallback_count,
+                },
+                ttl_seconds=app.state.route_config.cache_ttl_seconds,
+            )
+
+        extra_headers = {
+            "X-Gateway-Model": current_model,
+            "X-Gateway-Reason": decision.reason,
+            "X-Gateway-Fallback-Count": str(fallback_count),
+        }
+        if fallback_count > 0:
+            extra_headers["X-Gateway-Fallback-From"] = original_model
+
+        if last_response is not None:
+            return _response_from_upstream(last_response, extra_headers=extra_headers)
+
+        if last_exception is not None:
+            raise last_exception
+
+        return JSONResponse(status_code=500, content={"error": "upstream request failed"})
 
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def unsupported_v1_path(path: str) -> JSONResponse:
@@ -84,14 +129,20 @@ def create_app(
         request: Request,
         path: str,
         body: dict[str, Any],
-        extra_headers: dict[str, str] | None = None,
-    ) -> Response:
+    ) -> httpx.Response:
         url = app.state.litellm_base_url + path
         async with httpx.AsyncClient(transport=app.state.transport, timeout=120) as client:
-            upstream = await client.post(url, headers=_forward_headers(request), json=body)
-        return _response_from_upstream(upstream, extra_headers=extra_headers)
+            return await client.post(url, headers=_forward_headers(request), json=body)
 
     return app
+
+
+def _is_success(response: Response) -> bool:
+    return 200 <= response.status_code < 300
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {429, 500, 502, 503, 504}
 
 
 def _forward_headers(request: Request) -> dict[str, str]:
