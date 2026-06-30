@@ -54,7 +54,7 @@ turn it into a NAS-ready personal v1.
 - [ ] Add exponential backoff for router-level retries.
 - [x] Add `X-Gateway-Fallback-From` and `X-Gateway-Fallback-Count` response
       headers.
-- [ ] Log structured request metadata: session id hash, selected model, routing
+- [x] Log structured request metadata: session id hash, selected model, routing
       reason, status, latency, and fallback count.
 - [x] Add LiteLLM and Redis checks to `/healthz`.
 - [x] Add a deeper `/readyz` endpoint for dependency readiness.
