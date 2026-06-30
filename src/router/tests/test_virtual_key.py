@@ -12,7 +12,7 @@ MASTER_KEY = "Bearer sk-master-key"
 
 
 @pytest.mark.asyncio
-async def test_virtual_key_is_forwarded_to_litellm():
+async def test_virtual_key_is_forwarded_to_litellm(simple_route_config_path: str):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -20,13 +20,13 @@ async def test_virtual_key_is_forwarded_to_litellm():
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": f"Bearer {VIRTUAL_KEY}", "X-Session-Id": "vkey-forward"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -34,7 +34,7 @@ async def test_virtual_key_is_forwarded_to_litellm():
 
 
 @pytest.mark.asyncio
-async def test_virtual_key_allowlist_403_is_surfaced():
+async def test_virtual_key_allowlist_403_is_surfaced(simple_route_config_path: str):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -46,7 +46,7 @@ async def test_virtual_key_allowlist_403_is_surfaced():
                 "error": {
                     "message": (
                         "key not allowed to access model. This key can only access "
-                        "models=['fast']. Tried to access deepseek-pro"
+                        "models=['explorer']. Tried to access planner"
                     ),
                     "type": "key_model_access_denied",
                     "code": "403",
@@ -55,18 +55,18 @@ async def test_virtual_key_allowlist_403_is_surfaced():
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": f"Bearer {VIRTUAL_KEY}", "X-Session-Id": "vkey-block"},
-            json={"model": "deepseek-pro", "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "planner", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 403
     assert seen["auth"] == f"Bearer {VIRTUAL_KEY}"
-    assert seen["model"] == "deepseek-pro"
+    assert seen["model"] == "planner"
     body = response.json()
     assert "key_model_access_denied" in json.dumps(body)
     assert "X-Gateway-Fallback-From" not in response.headers
@@ -74,20 +74,20 @@ async def test_virtual_key_allowlist_403_is_surfaced():
 
 
 @pytest.mark.asyncio
-async def test_master_key_smoke_still_works():
+async def test_master_key_smoke_still_works(simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("authorization") == MASTER_KEY
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": MASTER_KEY, "X-Session-Id": "master-smoke"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
-    assert response.headers["X-Gateway-Model"] == "opencodego-fast"
+    assert response.headers["X-Gateway-Model"] == "coder"

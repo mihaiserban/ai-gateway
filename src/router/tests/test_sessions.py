@@ -7,9 +7,9 @@ from router.sessions import MemorySessionStore
 async def test_memory_session_store_round_trips_session():
     store = MemorySessionStore()
 
-    await store.set("abc", {"model": "fast"}, ttl_seconds=600)
+    await store.set("abc", {"model": "explorer"}, ttl_seconds=600)
 
-    assert await store.get("abc") == {"model": "fast"}
+    assert await store.get("abc") == {"model": "explorer"}
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_memory_session_store_expires_sessions_after_ttl():
     now = 1_000.0
     store = MemorySessionStore(clock=lambda: now)
 
-    await store.set("abc", {"model": "fast"}, ttl_seconds=10)
+    await store.set("abc", {"model": "explorer"}, ttl_seconds=10)
 
     now = 1_011.0
 

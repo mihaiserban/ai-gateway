@@ -14,12 +14,12 @@ from router.routing import RouteConfig, _timeout_for
 
 
 def test_timeout_for_returns_configured_value():
-    config = RouteConfig(timeouts={"deepseek-pro": 5})
-    assert _timeout_for(config, "deepseek-pro") == 5
+    config = RouteConfig(timeouts={"planner": 5})
+    assert _timeout_for(config, "planner") == 5
 
 
 def test_timeout_for_falls_back_to_default_120():
-    config = RouteConfig(timeouts={"deepseek-pro": 5})
+    config = RouteConfig(timeouts={"planner": 5})
     assert _timeout_for(config, "unknown-alias") == 120
 
 
@@ -52,19 +52,19 @@ async def test_per_alias_timeout_used_for_proxy(monkeypatch, tmp_path):
         """
 cache_ttl_seconds: 600
 allowed_models:
-  - fast
-  - deepseek-pro
-  - opencodego-fast
-  - opencodego-code
-  - ollama-cloud
+  - explorer
+  - planner
+  - coder
+  - planner-ocg
+  - explorer-ocg
 fallbacks:
-  fast: []
-  deepseek-pro: []
-  opencodego-fast: []
-  opencodego-code: []
-  ollama-cloud: []
+  explorer: []
+  planner: []
+  coder: []
+  planner-ocg: []
+  explorer-ocg: []
 timeouts:
-  opencodego-fast: 5
+  coder: 5
 """,
     )
 
@@ -81,7 +81,7 @@ timeouts:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "timeout-proxy"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -108,35 +108,35 @@ def _recorder():
 
 
 @pytest.mark.asyncio
-async def test_backoff_sleeps_between_fallback_attempts():
+async def test_backoff_sleeps_between_fallback_attempts(simple_route_config_path: str):
     sleep, calls = _recorder()
     seen_models: list[str] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
         seen_models.append(model)
-        if model == "opencodego-fast":
+        if model == "coder":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
     app.state.async_sleep = sleep
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-1"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
-    assert seen_models == ["opencodego-fast", "fast"]
+    assert seen_models == ["coder", "explorer"]
     assert calls == [0.2]
 
 
 @pytest.mark.asyncio
-async def test_backoff_not_called_on_client_error():
+async def test_backoff_no_sleep_on_non_retryable_404(simple_route_config_path: str):
     sleep, calls = _recorder()
     seen_models: list[str] = []
 
@@ -145,51 +145,51 @@ async def test_backoff_not_called_on_client_error():
         return httpx.Response(400, json={"error": "bad request"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
     app.state.async_sleep = sleep
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "no-sleep-400"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 400
-    assert seen_models == ["opencodego-fast"]
+    assert seen_models == ["coder"]
     assert calls == []
 
 
 @pytest.mark.asyncio
-async def test_backoff_grows_exponentially():
+async def test_backoff_grows_exponentially(simple_route_config_path: str):
     sleep, calls = _recorder()
     seen_models: list[str] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
         seen_models.append(model)
-        if model in {"opencodego-fast", "fast"}:
+        if model in {"coder", "explorer"}:
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
     app.state.async_sleep = sleep
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-grow"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
-    assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
+    assert seen_models == ["coder", "explorer", "planner"]
     assert calls == [0.2, 0.4]
 
 
 @pytest.mark.asyncio
-async def test_backoff_capped_at_max_delay():
+async def test_backoff_capped_at_max_delay(simple_route_config_path: str):
     sleep, calls = _recorder()
     seen_models: list[str] = []
 
@@ -199,23 +199,23 @@ async def test_backoff_capped_at_max_delay():
         return httpx.Response(503, json={"error": "unavailable"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
     app.state.async_sleep = sleep
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-cap"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 503
-    assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
+    assert seen_models == ["coder", "explorer", "planner"]
     assert calls == [0.2, 0.4]
 
 
 @pytest.mark.asyncio
-async def test_backoff_no_sleep_after_final_attempt():
+async def test_backoff_no_sleep_after_final_attempt(simple_route_config_path: str):
     sleep, calls = _recorder()
     seen_models: list[str] = []
 
@@ -225,22 +225,22 @@ async def test_backoff_no_sleep_after_final_attempt():
         return httpx.Response(503, json={"error": "unavailable"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
     app.state.async_sleep = sleep
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "final-attempt"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
-    assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
+    assert seen_models == ["coder", "explorer", "planner"]
     assert len(calls) == 2
 
 
 @pytest.mark.asyncio
-async def test_backoff_no_sleep_on_non_retryable_404():
+async def test_backoff_no_sleep_on_non_retryable_404_branch(simple_route_config_path: str):
     sleep, calls = _recorder()
     seen_models: list[str] = []
 
@@ -249,14 +249,14 @@ async def test_backoff_no_sleep_on_non_retryable_404():
         return httpx.Response(404, json={"error": "not found"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
     app.state.async_sleep = sleep
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "no-sleep-404"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 404
@@ -282,9 +282,9 @@ def test_route_config_loads_backoff_params(tmp_path):
         """
 cache_ttl_seconds: 600
 allowed_models:
-  - fast
+  - explorer
 fallbacks:
-  fast: []
+  explorer: []
 retry_base_delay: 0.5
 retry_max_delay: 5.0
 """,

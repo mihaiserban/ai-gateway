@@ -25,7 +25,7 @@ def test_render_router_config_from_gateway_config():
     assert router_config["cache_ttl_seconds"] == 600
     assert router_config["retry_base_delay"] == 0.2
     assert router_config["retry_max_delay"] == 2.0
-    assert router_config["default_model"] == "coder"
+    assert router_config["default_model"] == config["router"]["default_model"]
     assert router_config["allowed_models"] == [entry["name"] for entry in entries]
     assert router_config["fallbacks"] == {
         entry["name"]: list(entry.get("fallbacks") or []) for entry in entries

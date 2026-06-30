@@ -8,54 +8,54 @@ from router.metrics import Metrics
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_requests_and_models():
+async def test_metrics_counts_requests_and_models(simple_route_config_path: str):
     """Two requests using different selected models bump the right counters."""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        # opencodego-fast: code signal ("refactor ... .py")
+        # coder: code signal ("refactor ... .py")
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "s1"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
-        # fast: short plain prompt with no code/reasoning signals
+        # explorer: short plain prompt with no code/reasoning signals
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "s2"},
-            json={"messages": [{"role": "user", "content": "say hello"}]},
+            json={"model": "explorer", "messages": [{"role": "user", "content": "say hello"}]},
         )
 
     metrics: Metrics = app.state.metrics
     assert metrics.requests_total == 2
-    assert metrics.selected_model_counts == {"opencodego-fast": 1, "fast": 1}
-    assert metrics.served_model_counts == {"opencodego-fast": 1, "fast": 1}
+    assert metrics.selected_model_counts == {"coder": 1, "explorer": 1}
+    assert metrics.served_model_counts == {"coder": 1, "explorer": 1}
     assert metrics.fallback_count_total == 0
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_fallbacks():
+async def test_metrics_counts_fallbacks(simple_route_config_path: str):
     """One request that falls back adds fallback_count_total and records the final model."""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "opencodego-fast":
+        if model == "coder":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "fb"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -65,13 +65,13 @@ async def test_metrics_counts_fallbacks():
     assert metrics.requests_total == 1
     assert metrics.fallback_count_total == 1
     # selected_model_counts tracks the originally chosen model.
-    assert metrics.selected_model_counts == {"opencodego-fast": 1}
+    assert metrics.selected_model_counts == {"coder": 1}
     # served_model_counts tracks the model that actually served the request.
-    assert metrics.served_model_counts == {"fast": 1}
+    assert metrics.served_model_counts == {"explorer": 1}
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_cache_hit_miss_and_unknown():
+async def test_metrics_counts_cache_hit_miss_and_unknown(simple_route_config_path: str):
     cache_headers = iter(
         [
             {"x-litellm-cache-hit": "true"},
@@ -88,7 +88,7 @@ async def test_metrics_counts_cache_hit_miss_and_unknown():
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         for session_id in ("hit", "miss", "unknown"):
@@ -103,7 +103,7 @@ async def test_metrics_counts_cache_hit_miss_and_unknown():
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_cache_key_without_hit_header_as_miss():
+async def test_metrics_counts_cache_key_without_hit_header_as_miss(simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -112,7 +112,7 @@ async def test_metrics_counts_cache_key_without_hit_header_as_miss():
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
@@ -126,56 +126,56 @@ async def test_metrics_counts_cache_key_without_hit_header_as_miss():
 
 
 @pytest.mark.asyncio
-async def test_metrics_tracks_availability_for_each_upstream_attempt():
+async def test_metrics_tracks_availability_for_each_upstream_attempt(simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "opencodego-fast":
+        if model == "coder":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "availability"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     provider_availability = app.state.metrics.snapshot()["provider_availability"]
-    assert provider_availability["opencodego-fast"]["attempts"] == 1
-    assert provider_availability["opencodego-fast"]["successes"] == 0
-    assert provider_availability["opencodego-fast"]["failures"] == 1
-    assert provider_availability["opencodego-fast"]["retryable_failures"] == 1
-    assert provider_availability["opencodego-fast"]["availability_percent"] == 0.0
-    assert provider_availability["opencodego-fast"]["last_status"] == 503
-    assert provider_availability["opencodego-fast"]["last_failure_ts"] is not None
+    assert provider_availability["coder"]["attempts"] == 1
+    assert provider_availability["coder"]["successes"] == 0
+    assert provider_availability["coder"]["failures"] == 1
+    assert provider_availability["coder"]["retryable_failures"] == 1
+    assert provider_availability["coder"]["availability_percent"] == 0.0
+    assert provider_availability["coder"]["last_status"] == 503
+    assert provider_availability["coder"]["last_failure_ts"] is not None
 
-    assert provider_availability["fast"]["attempts"] == 1
-    assert provider_availability["fast"]["successes"] == 1
-    assert provider_availability["fast"]["failures"] == 0
-    assert provider_availability["fast"]["retryable_failures"] == 0
-    assert provider_availability["fast"]["availability_percent"] == 100.0
-    assert provider_availability["fast"]["last_status"] == 200
-    assert provider_availability["fast"]["last_failure_ts"] is None
+    assert provider_availability["explorer"]["attempts"] == 1
+    assert provider_availability["explorer"]["successes"] == 1
+    assert provider_availability["explorer"]["failures"] == 0
+    assert provider_availability["explorer"]["retryable_failures"] == 0
+    assert provider_availability["explorer"]["availability_percent"] == 100.0
+    assert provider_availability["explorer"]["last_status"] == 200
+    assert provider_availability["explorer"]["last_failure_ts"] is None
 
 
 @pytest.mark.asyncio
-async def test_metrics_endpoint_returns_counts():
+async def test_metrics_endpoint_returns_counts(simple_route_config_path: str):
     """GET /metrics returns the documented JSON shape."""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "m1"},
-            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         resp = await client.get("/metrics")
 
@@ -191,5 +191,5 @@ async def test_metrics_endpoint_returns_counts():
     }
     assert payload["requests_total"] == 1
     assert payload["fallback_count_total"] == 0
-    assert payload["selected_model_counts"] == {"opencodego-fast": 1}
-    assert payload["served_model_counts"] == {"opencodego-fast": 1}
+    assert payload["selected_model_counts"] == {"coder": 1}
+    assert payload["served_model_counts"] == {"coder": 1}
