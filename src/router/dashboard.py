@@ -72,15 +72,7 @@ class UsageSummaryStore:
 
 
 def _empty_usage_summary(days: int) -> dict[str, Any]:
-    return {
-        "enabled": False,
-        "period_days": days,
-        "totals": {},
-        "top_models": [],
-        "daily_usage": [],
-        "top_keys": [],
-        "recent_failures": [],
-    }
+    return {"enabled": False, "period_days": days, "totals": {}} | {key: [] for key in ("top_models", "daily_usage", "top_keys", "recent_failures")}
 
 
 def _fetch_one(cur: Any, sql: str, days: int) -> dict[str, Any]:
@@ -187,10 +179,7 @@ DASHBOARD_HTML = """<!doctype html>
     .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
     .panel { background: white; border: 1px solid #dfe3e8; border-radius: 8px; padding: 14px; }
     .span-3 { grid-column: span 3; }
-    .span-4 { grid-column: span 4; }
     .span-6 { grid-column: span 6; }
-    .span-8 { grid-column: span 8; }
-    .span-12 { grid-column: span 12; }
     .metric { font-size: 30px; font-weight: 700; }
     .muted { color: #5d6875; font-size: 13px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -281,9 +270,8 @@ DASHBOARD_HTML = """<!doctype html>
         model,
         fmt.format(value.attempts || 0),
         `${value.availability_percent || 0}%`,
-        value.last_status || "",
       ]);
-      document.getElementById("availability").innerHTML = table(["Model", "Attempts", "Availability", "Last"], rows);
+      document.getElementById("availability").innerHTML = table(["Model", "Attempts", "Availability"], rows);
     }
 
     function renderFailures(rows) {
