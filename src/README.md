@@ -233,6 +233,108 @@ docker compose pull
 docker compose up -d --build
 ```
 
+## Backup And Restore
+
+Back up the two named volumes and the config folder before any upgrade.
+
+Backup (run on the NAS):
+
+```bash
+cd /volume1/docker/ai-gateway
+
+# Postgres: logical dump
+docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
+  > backups/postgres-$(date +%F).sql
+
+# Redis: append-only file snapshot
+docker compose exec redis redis-cli -a "$REDIS_PASSWORD" BGSAVE
+docker compose cp redis:/data/appendonly.aof backups/redis-$(date +%F).aof
+
+# Config + secrets (to a safe, offline location)
+tar czf backups/ai-gateway-config-$(date +%F).tgz \
+  docker-compose.yml litellm.config.yaml router/router_config.yaml .env
+```
+
+Restore:
+
+```bash
+cd /volume1/docker/ai-gateway
+docker compose down
+
+# Postgres
+docker compose up -d postgres
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  < backups/postgres-YYYY-MM-DD.sql
+
+# Redis
+docker cp backups/redis-YYYY-MM-DD.aof ai-gateway-redis:/data/appendonly.aof
+docker compose restart redis
+
+docker compose up -d --build
+```
+
+Keep `backups/` outside the project folder or add it to `.gitignore`.
+
+## Rollback
+
+If an upgrade breaks the gateway:
+
+```bash
+cd /volume1/docker/ai-gateway
+docker compose down
+# Restore the previous config + .env from backup, then:
+git checkout <previous-tag>   # if the repo lives on the NAS
+docker compose up -d --build
+# If Postgres schema changed, restore from the pre-upgrade SQL dump.
+```
+
+## Secret Rotation
+
+Rotate provider keys and the LiteLLM master/salt keys without losing state:
+
+1. Generate new secrets (see `.env` generation helper below).
+2. Edit `.env` in place with the new values.
+3. For `LITELLM_MASTER_KEY` and `LITELLM_SALT_KEY`: restart LiteLLM only
+   (`docker compose restart litellm`). Existing virtual keys and stored
+   provider credentials are encrypted with `SALT_KEY`; rotating it requires
+   re-creating keys and re-adding provider credentials via the LiteLLM admin
+   UI. Do this in a maintenance window.
+4. For provider API keys (`DEEPSEEK_API_KEY`, etc.): edit `.env`, then
+   `docker compose restart litellm`.
+5. Verify with a smoke test using a virtual key.
+
+## .env Generation Helper
+
+Generate strong random secrets for `.env`:
+
+```bash
+python3 - <<'PY'
+import secrets
+keys = [
+    "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY", "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
+]
+for k in keys:
+    print(f"{k}=sk-{secrets.token_urlsafe(32)}")
+PY
+```
+
+Provider API keys (`DEEPSEEK_API_KEY`, `OPENCODE_GO_API_KEY`, `OLLAMA_API_KEY`)
+come from the provider dashboards and must be pasted in manually. The helper
+only generates the internal secrets.
+
+## Tailscale-Only Exposure
+
+The default posture is Tailscale-only. The gateway should never be exposed
+directly to the public internet.
+
+- Install Tailscale on the NAS and join the tailnet.
+- Agents use `http://<nas-tailscale-ip>:4100/v1`.
+- Only port `4100` is published by the router service; `4000`, `5432`, and
+  `6379` stay on the internal Docker network.
+- If you need remote access without Tailscale, use a Cloudflare Tunnel with
+  Access policies in front of it — never a raw port forward.
+
 ## Local Tests
 
 ```bash
