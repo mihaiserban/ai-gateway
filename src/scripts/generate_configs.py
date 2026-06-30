@@ -28,18 +28,22 @@ def load_gateway_config(path: Path) -> dict[str, Any]:
 
 def render_router_config(config: dict[str, Any]) -> dict[str, Any]:
     router = _mapping(config, "router")
-    models = _models(config)
+    entries = _entries(config)
+    entries_by_name = _entry_map(config)
 
     return {
         "cache_ttl_seconds": router.get("cache_ttl_seconds", 600),
-        "default_model": router.get("default_model", models[0]["name"]),
+        "default_model": router.get("default_model", entries[0]["name"]),
         "retry_base_delay": router.get("retry_base_delay", 0.2),
         "retry_max_delay": router.get("retry_max_delay", 2.0),
-        "allowed_models": [model["name"] for model in models],
-        "fallbacks": {model["name"]: list(model.get("fallbacks") or []) for model in models},
-        "timeouts": {model["name"]: model.get("timeout", 120) for model in models},
+        "allowed_models": [entry["name"] for entry in entries],
+        "fallbacks": {entry["name"]: list(entry.get("fallbacks") or []) for entry in entries},
+        "timeouts": {entry["name"]: entry.get("timeout", 120) for entry in entries},
         "cache_key_aliases": list(router.get("cache_key_aliases") or []),
-        "provider_models": {model["name"]: model["litellm_model"] for model in models},
+        "provider_models": {
+            entry["name"]: _resolve_entry(entry, entries_by_name)["litellm_model"]
+            for entry in entries
+        },
     }
 
 
@@ -49,7 +53,8 @@ def render_litellm_config(config: dict[str, Any]) -> dict[str, Any]:
     cache = _mapping(litellm, "cache")
     general = _mapping(litellm, "general")
     logging = _mapping(litellm, "logging")
-    models = _models(config)
+    entries = _entries(config)
+    entries_by_name = _entry_map(config)
 
     litellm_settings = {
         "drop_params": settings.get("drop_params", True),
@@ -66,14 +71,14 @@ def render_litellm_config(config: dict[str, Any]) -> dict[str, Any]:
         litellm_settings["callbacks"] = callbacks
 
     return {
-        "model_list": [_render_model(model) for model in models],
+        "model_list": [_render_model(entry, entries_by_name) for entry in entries],
         "litellm_settings": litellm_settings,
         "general_settings": {
             "master_key": _env_ref(general.get("master_key_env", "LITELLM_MASTER_KEY")),
             "database_url": _env_ref(general.get("database_url_env", "DATABASE_URL")),
         },
         "router_settings": {
-            "fallbacks": [{model["name"]: list(model.get("fallbacks") or [])} for model in models],
+            "fallbacks": [{entry["name"]: list(entry.get("fallbacks") or [])} for entry in entries],
         },
     }
 
@@ -89,23 +94,75 @@ def generate(
     _write_yaml(litellm_path, render_litellm_config(config))
 
 
-def _render_model(model: dict[str, Any]) -> dict[str, Any]:
+def _render_model(entry: dict[str, Any], entries_by_name: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    resolved = _resolve_entry(entry, entries_by_name)
     params = {
-        "model": model["litellm_model"],
-        "api_key": _env_ref(model["api_key_env"]),
+        "model": resolved["litellm_model"],
+        "api_key": _env_ref(resolved["api_key_env"]),
     }
-    if api_base_env := model.get("api_base_env"):
+    if api_base_env := resolved.get("api_base_env"):
         params["api_base"] = _env_ref(api_base_env)
-    if additional_drop_params := model.get("additional_drop_params"):
+    if additional_drop_params := resolved.get("additional_drop_params"):
         params["additional_drop_params"] = list(additional_drop_params)
 
     rendered = {
-        "model_name": model["name"],
+        "model_name": entry["name"],
         "litellm_params": params,
     }
-    if model_info := model.get("model_info"):
+    if model_info := entry.get("model_info", resolved.get("model_info")):
         rendered["model_info"] = dict(model_info)
     return rendered
+
+
+# Alias and entry helpers below this line
+
+
+def _entries(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return _models(config) + _aliases(config)
+
+
+def _entry_map(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {entry["name"]: entry for entry in _entries(config)}
+
+
+def _aliases(config: dict[str, Any]) -> list[dict[str, Any]]:
+    aliases = config.get("aliases") or []
+    if not isinstance(aliases, list):
+        raise ConfigError("aliases must be a list")
+    if not all(isinstance(alias, dict) for alias in aliases):
+        raise ConfigError("each alias must be a mapping")
+    return aliases
+
+
+def _validate_model_info(entry: dict[str, Any]) -> None:
+    model_info = entry.get("model_info") or {}
+    if not isinstance(model_info, dict):
+        raise ConfigError(f"model_info for {entry['name']!r} must be a mapping")
+    reasoning_level = model_info.get("reasoning_level")
+    if reasoning_level is not None and reasoning_level not in {"none", "low", "medium", "high"}:
+        raise ConfigError(
+            f"reasoning_level for {entry['name']!r} must be one of none, low, medium, high"
+        )
+
+
+def _resolve_entry(
+    entry: dict[str, Any],
+    entries_by_name: dict[str, dict[str, Any]],
+    seen: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    if "litellm_model" in entry:
+        return entry
+
+    name = entry["name"]
+    target = entry.get("target")
+    if not isinstance(target, str) or not target:
+        raise ConfigError(f"alias {name!r} is missing required string field 'target'")
+    if target not in entries_by_name:
+        raise ConfigError(f"alias {name!r} targets unknown entry {target!r}")
+    if target in seen:
+        cycle = " -> ".join((*seen, target))
+        raise ConfigError(f"alias cycle detected: {cycle}")
+    return _resolve_entry(entries_by_name[target], entries_by_name, (*seen, target))
 
 
 def _write_yaml(path: Path, data: dict[str, Any]) -> None:
@@ -116,22 +173,34 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
 def _validate(config: dict[str, Any]) -> None:
     router = _mapping(config, "router")
     models = _models(config)
+    aliases = _aliases(config)
+    entries = models + aliases
     names: set[str] = set()
-    for model in models:
-        name = _required_str(model, "name", "model")
+
+    for entry in entries:
+        name = _required_str(entry, "name", "entry")
         if name in names:
             raise ConfigError(f"duplicate model alias {name!r}")
         names.add(name)
-        _required_str(model, "litellm_model", name)
-        _required_str(model, "api_key_env", name)
+        _validate_model_info(entry)
 
     for model in models:
         name = model["name"]
-        for target in model.get("fallbacks") or []:
+        _required_str(model, "litellm_model", name)
+        _required_str(model, "api_key_env", name)
+
+    entries_by_name = {entry["name"]: entry for entry in entries}
+    for alias in aliases:
+        _required_str(alias, "target", f"alias {alias['name']!r}")
+        _resolve_entry(alias, entries_by_name, (alias["name"],))
+
+    for entry in entries:
+        name = entry["name"]
+        for target in entry.get("fallbacks") or []:
             if target not in names:
                 raise ConfigError(f"fallback target {target!r} under {name!r} is not a defined model")
 
-    default_model = router.get("default_model", models[0]["name"])
+    default_model = router.get("default_model", entries[0]["name"])
     if default_model not in names:
         raise ConfigError(f"default_model {default_model!r} is not a defined model")
 

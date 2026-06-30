@@ -65,6 +65,81 @@ def test_render_litellm_config_from_gateway_config():
     ]
 
 
+def test_alias_entries_render_to_router_and_litellm_configs():
+    config = {
+        "router": {"default_model": "coder"},
+        "litellm": {
+            "settings": {"drop_params": True, "request_timeout": 120, "num_retries": 1},
+            "cache": {"type": "redis", "redis_url_env": "REDIS_URL"},
+            "general": {
+                "master_key_env": "LITELLM_MASTER_KEY",
+                "database_url_env": "DATABASE_URL",
+            },
+        },
+        "models": [
+            {
+                "name": "deepseek-v4-pro-ollama",
+                "litellm_model": "ollama_chat/deepseek-v4-pro",
+                "api_key_env": "OLLAMA_API_KEY",
+                "api_base_env": "OLLAMA_API_BASE",
+                "timeout": 120,
+                "model_info": {
+                    "reasoning_level": "high",
+                    "input_cost_per_token": 0.0,
+                    "output_cost_per_token": 0.0,
+                },
+            },
+            {
+                "name": "deepseek-v4-pro-deepseek",
+                "litellm_model": "deepseek/deepseek-v4-pro",
+                "api_key_env": "DEEPSEEK_API_KEY",
+                "timeout": 120,
+                "model_info": {
+                    "reasoning_level": "high",
+                    "input_cost_per_token": 0.00000028,
+                    "output_cost_per_token": 0.00000056,
+                },
+            },
+        ],
+        "aliases": [
+            {
+                "name": "deepseek-v4-pro",
+                "target": "deepseek-v4-pro-ollama",
+                "fallbacks": ["deepseek-v4-pro-deepseek"],
+                "timeout": 120,
+                "model_info": {"mode": "model-family", "reasoning_level": "high"},
+            },
+            {
+                "name": "coder",
+                "target": "deepseek-v4-pro",
+                "fallbacks": ["deepseek-v4-pro-deepseek"],
+                "timeout": 120,
+                "model_info": {"mode": "role", "reasoning_level": "high"},
+            },
+        ],
+    }
+
+    router_config = render_router_config(config)
+    litellm_config = render_litellm_config(config)
+
+    assert router_config["default_model"] == "coder"
+    assert router_config["allowed_models"] == [
+        "deepseek-v4-pro-ollama",
+        "deepseek-v4-pro-deepseek",
+        "deepseek-v4-pro",
+        "coder",
+    ]
+    assert router_config["fallbacks"]["deepseek-v4-pro"] == ["deepseek-v4-pro-deepseek"]
+    assert router_config["fallbacks"]["coder"] == ["deepseek-v4-pro-deepseek"]
+    assert router_config["provider_models"]["coder"] == "ollama_chat/deepseek-v4-pro"
+
+    coder_entry = next(entry for entry in litellm_config["model_list"] if entry["model_name"] == "coder")
+    assert coder_entry["litellm_params"]["model"] == "ollama_chat/deepseek-v4-pro"
+    assert coder_entry["litellm_params"]["api_key"] == "os.environ/OLLAMA_API_KEY"
+    assert coder_entry["litellm_params"]["api_base"] == "os.environ/OLLAMA_API_BASE"
+    assert coder_entry["model_info"] == {"mode": "role", "reasoning_level": "high"}
+
+
 def test_validation_rejects_unknown_fallback_target(tmp_path):
     config_path = tmp_path / "gateway.config.yaml"
     config_path.write_text(
@@ -102,6 +177,97 @@ models:
     )
 
     with pytest.raises(ConfigError, match="fallback target 'missing'"):
+        load_gateway_config(config_path)
+
+
+def test_validation_rejects_unknown_alias_target(tmp_path):
+    config_path = tmp_path / "gateway.config.yaml"
+    config_path.write_text(
+        """
+router:
+  default_model: coder
+litellm:
+  settings:
+    drop_params: true
+  cache:
+    redis_url_env: REDIS_URL
+  general:
+    master_key_env: LITELLM_MASTER_KEY
+    database_url_env: DATABASE_URL
+models:
+  - name: deepseek-v4-pro-ollama
+    litellm_model: ollama_chat/deepseek-v4-pro
+    api_key_env: OLLAMA_API_KEY
+aliases:
+  - name: coder
+    target: missing-target
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="alias 'coder' targets unknown entry 'missing-target'"):
+        load_gateway_config(config_path)
+
+
+def test_validation_rejects_alias_cycles(tmp_path):
+    config_path = tmp_path / "gateway.config.yaml"
+    config_path.write_text(
+        """
+router:
+  default_model: coder
+litellm:
+  settings:
+    drop_params: true
+  cache:
+    redis_url_env: REDIS_URL
+  general:
+    master_key_env: LITELLM_MASTER_KEY
+    database_url_env: DATABASE_URL
+models:
+  - name: deepseek-v4-pro-ollama
+    litellm_model: ollama_chat/deepseek-v4-pro
+    api_key_env: OLLAMA_API_KEY
+aliases:
+  - name: coder
+    target: planner
+  - name: planner
+    target: coder
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="alias cycle detected: coder -> planner -> coder"):
+        load_gateway_config(config_path)
+
+
+def test_validation_rejects_unknown_reasoning_level(tmp_path):
+    config_path = tmp_path / "gateway.config.yaml"
+    config_path.write_text(
+        """
+router:
+  default_model: coder
+litellm:
+  settings:
+    drop_params: true
+  cache:
+    redis_url_env: REDIS_URL
+  general:
+    master_key_env: LITELLM_MASTER_KEY
+    database_url_env: DATABASE_URL
+models:
+  - name: deepseek-v4-pro-ollama
+    litellm_model: ollama_chat/deepseek-v4-pro
+    api_key_env: OLLAMA_API_KEY
+    model_info:
+      reasoning_level: extreme
+aliases:
+  - name: coder
+    target: deepseek-v4-pro-ollama
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="reasoning_level for 'deepseek-v4-pro-ollama'"):
         load_gateway_config(config_path)
 
 
