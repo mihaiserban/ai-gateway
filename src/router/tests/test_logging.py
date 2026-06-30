@@ -138,17 +138,17 @@ async def test_chat_log_on_error_path_logs_error_status(caplog):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            with pytest.raises(Exception):
-                await client.post(
-                    "/v1/chat/completions",
-                    headers={"Authorization": "Bearer test", "X-Session-Id": "log-err"},
-                    json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-                )
+            response = await client.post(
+                "/v1/chat/completions",
+                headers={"Authorization": "Bearer test", "X-Session-Id": "log-err"},
+                json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            )
 
+    assert response.status_code == 504
     lines = _log_lines(caplog)
     assert len(lines) == 1
     line = lines[0]
-    assert "status=error" in line
+    assert "status=504" in line
     assert "model=" in line
     assert "reason=" in line
     assert "latency_ms=" in line

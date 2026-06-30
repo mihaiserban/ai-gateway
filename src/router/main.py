@@ -20,6 +20,10 @@ from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
 
 
 FORWARDED_HEADERS = {"authorization", "content-type", "accept"}
+CACHE_RESPONSE_HEADERS = {
+    "x-litellm-cache-hit",
+    "x-litellm-cache-key",
+}
 
 logger = logging.getLogger("router")
 
@@ -154,7 +158,7 @@ def create_app(
         if last_response is not None:
             status = last_response.status_code
         else:
-            status = "error"
+            status = 504 if isinstance(last_exception, httpx.TimeoutException) else 502
         _log_request(
             session_id,
             current_model,
@@ -183,7 +187,11 @@ def create_app(
                 )
             return _response_from_upstream(last_response, extra_headers=extra_headers)
 
-        raise last_exception if last_exception is not None else RuntimeError("upstream request failed")
+        return JSONResponse(
+            status_code=status,
+            content={"error": "upstream request failed"},
+            headers=extra_headers,
+        )
 
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def unsupported_v1_path(path: str) -> JSONResponse:
@@ -272,11 +280,12 @@ def _response_from_upstream(
     extra_headers: dict[str, str] | None = None,
 ) -> Response:
     content_type = upstream.headers.get("content-type", "application/json")
+    headers = _response_headers(upstream, extra_headers)
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
         media_type=content_type,
-        headers=extra_headers,
+        headers=headers,
     )
 
 
@@ -285,7 +294,7 @@ def _streaming_response(
     extra_headers: dict[str, str] | None = None,
 ) -> StreamingResponse:
     content_type = upstream.headers.get("content-type", "text/event-stream")
-    headers = dict(extra_headers or {})
+    headers = _response_headers(upstream, extra_headers)
     headers["content-type"] = content_type
 
     async def body_iterator() -> AsyncIterator[bytes]:
@@ -317,24 +326,52 @@ def _fallback_session_id(body: dict[str, Any], token: str | None = None) -> str:
             continue
         role = message.get("role")
         content = message.get("content")
-        if role == "system" and isinstance(content, str) and not system_text:
-            system_text = content
-        elif role == "user" and isinstance(content, str) and not user_text:
-            user_text = content
+        text = _content_text(content)
+        if role == "system" and text and not system_text:
+            system_text = text
+        elif role == "user" and text and not user_text:
+            user_text = text
         if system_text and user_text:
             break
-
-    if not system_text and not user_text:
-        return "anonymous"
 
     token_fingerprint = ""
     if isinstance(token, str):
         token_fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+    if not system_text and not user_text and not token_fingerprint:
+        return "anonymous"
+
     digest = hashlib.sha256(
         f"{token_fingerprint}:{system_text}:{user_text}".encode("utf-8")
     ).hexdigest()
     return digest
+
+
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+
+    parts: list[str] = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        text = part.get("text") or part.get("content")
+        if isinstance(text, str):
+            parts.append(text)
+    return "\n".join(parts)
+
+
+def _response_headers(
+    upstream: httpx.Response,
+    extra_headers: dict[str, str] | None,
+) -> dict[str, str]:
+    headers = dict(extra_headers or {})
+    for key, value in upstream.headers.items():
+        if key.lower() in CACHE_RESPONSE_HEADERS:
+            headers[key] = value
+    return headers
 
 
 def _session_store(redis_url: str | None) -> SessionStore:

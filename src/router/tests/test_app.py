@@ -154,6 +154,45 @@ def test_fallback_session_id_is_anonymous_without_messages():
     assert _fallback_session_id({"messages": []}, "Bearer sk-test-key") == "anonymous"
 
 
+def test_fallback_session_id_uses_structured_message_text():
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "please refactor src/app.py"},
+                    {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}},
+                ],
+            }
+        ]
+    }
+
+    id_a = _fallback_session_id(body, "Bearer sk-test-key-a")
+    id_b = _fallback_session_id(body, "Bearer sk-test-key-b")
+
+    assert id_a != "anonymous"
+    assert id_a != id_b
+
+
+def test_fallback_session_id_uses_token_when_message_has_no_text():
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}},
+                ],
+            }
+        ]
+    }
+
+    id_a = _fallback_session_id(body, "Bearer sk-test-key-a")
+    id_b = _fallback_session_id(body, "Bearer sk-test-key-b")
+
+    assert id_a != "anonymous"
+    assert id_a != id_b
+
+
 @pytest.mark.asyncio
 async def test_chat_does_not_write_session_on_failed_upstream():
     seen_models: list[str] = []
@@ -364,6 +403,32 @@ async def test_chat_exhausted_fallback_returns_last_error_with_headers():
         )
 
     assert response.status_code == 503
+    assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
+    assert response.headers["X-Gateway-Model"] == "deepseek-pro"
+    assert response.headers["X-Gateway-Fallback-From"] == "opencodego-fast"
+    assert response.headers["X-Gateway-Fallback-Count"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_chat_exhausted_transport_errors_return_gateway_error_with_headers():
+    seen_models: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen_models.append(json.loads(request.content)["model"])
+        raise httpx.TimeoutException("request timed out")
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "exhausted-timeouts"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 504
+    assert response.json()["error"] == "upstream request failed"
     assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
     assert response.headers["X-Gateway-Model"] == "deepseek-pro"
     assert response.headers["X-Gateway-Fallback-From"] == "opencodego-fast"

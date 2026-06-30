@@ -248,3 +248,50 @@ async def test_cache_key_removed_on_fallback_to_non_allowed_alias(tmp_path):
     assert seen[0]["prompt_cache_key"] == _expected_cache_key("cache-session-5")
     # The non-allowed fallback alias must not carry it.
     assert "prompt_cache_key" not in seen[1]
+
+
+@pytest.mark.asyncio
+async def test_cache_response_headers_are_forwarded(tmp_path):
+    cfg_path = _write_config(
+        tmp_path,
+        cache_key_aliases=[],
+        allowed_models=["opencodego-fast", "fast", "deepseek-pro", "ollama-cloud"],
+        fallbacks={
+            "opencodego-fast": ["fast"],
+            "fast": ["ollama-cloud"],
+            "ollama-cloud": ["fast"],
+            "deepseek-pro": ["fast"],
+        },
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}]},
+            headers={
+                "x-litellm-cache-hit": "true",
+                "x-litellm-cache-key": "abc123",
+                "x-unrelated-upstream": "drop-me",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=str(cfg_path),
+        litellm_config_path=str(tmp_path / "missing-litellm.yaml"),
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "cache-response-headers"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["x-litellm-cache-hit"] == "true"
+    assert response.headers["x-litellm-cache-key"] == "abc123"
+    assert "x-unrelated-upstream" not in response.headers
