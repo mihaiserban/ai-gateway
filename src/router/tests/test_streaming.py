@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from router.main import create_app
+from router.usage_events import UsageEvent
 
 SSE_BODY = b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: {"choices":[{"delta":{"content":" world"}}]}\n\ndata: [DONE]\n\n'
 
@@ -43,6 +44,7 @@ async def test_chat_stream_passthrough_forwards_chunks(simple_route_config_path:
     assert response.headers["content-type"] == "text/event-stream"
     # The upstream model alias was rewritten to the explicit alias.
     assert seen["json"]["model"] == "coder"
+    assert seen["json"]["stream_options"] == {"include_usage": True}
     # All SSE chunks arrive in order, byte-for-byte.
     assert response.content == SSE_BODY
 
@@ -156,3 +158,142 @@ async def test_chat_stream_fallback_before_stream_starts(simple_route_config_pat
     assert response.headers["X-Gateway-Fallback-From"] == "coder"
     assert response.headers["X-Gateway-Fallback-Count"] == "1"
     assert response.content == SSE_BODY
+
+
+SSE_WITH_USAGE = b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: {"choices":[{"delta":{"content":" world"}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\ndata: [DONE]\n\n'
+
+
+class FakeSink:
+    def __init__(self) -> None:
+        self.events: list[UsageEvent] = []
+
+    async def record(self, event: UsageEvent) -> None:
+        self.events.append(event)
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_extracts_usage_from_sse(simple_route_config_path: str):
+    sink = FakeSink()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=SSE_WITH_USAGE,
+            headers={"content-type": "text/event-stream"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+        usage_sink=sink,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "stream-usage"},
+            json={
+                "model": "coder",
+                "messages": [{"role": "user", "content": "say hello"}],
+                "stream": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert len(sink.events) == 1
+    event = sink.events[0]
+    assert event.prompt_tokens == 10
+    assert event.completion_tokens == 5
+    assert event.total_tokens == 15
+    assert event.stream is True
+    assert event.served_model == "coder"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_no_usage_in_sse_records_none(simple_route_config_path: str):
+    sink = FakeSink()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=SSE_BODY,
+            headers={"content-type": "text/event-stream"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+        usage_sink=sink,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "stream-no-usage"},
+            json={
+                "model": "coder",
+                "messages": [{"role": "user", "content": "say hello"}],
+                "stream": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert len(sink.events) == 1
+    event = sink.events[0]
+    assert event.prompt_tokens is None
+    assert event.completion_tokens is None
+    assert event.total_tokens is None
+    assert event.stream is True
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_aborted_still_emits_usage_event(simple_route_config_path: str):
+    sink = FakeSink()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=SSE_WITH_USAGE,
+            headers={"content-type": "text/event-stream"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+        usage_sink=sink,
+    )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+        client.stream(
+            "POST",
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "stream-abort"},
+            json={
+                "model": "coder",
+                "messages": [{"role": "user", "content": "say hello"}],
+                "stream": True,
+            },
+        ) as response,
+    ):
+        assert response.status_code == 200
+        # Read only the first byte then abort
+        try:
+            async for _chunk in response.aiter_bytes(1):
+                break
+        except Exception:
+            pass
+
+    # Usage event should still be emitted because the body iterator's finally
+    # block runs and calls on_close with whatever was buffered.
+    assert len(sink.events) == 1
+    assert sink.events[0].stream is True

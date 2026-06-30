@@ -109,6 +109,7 @@ class UsageSummaryStore:
                 daily_usage = _fetch_all(cur, DAILY_USAGE_SQL, days)
                 top_keys = _fetch_all(cur, TOP_KEYS_SQL, days)
                 recent_failures = _fetch_all(cur, RECENT_FAILURES_SQL, days)
+                provider_latency = _fetch_all(cur, PROVIDER_LATENCY_SQL, days)
         except psycopg.Error as exc:
             logger.warning("usage_summary_db_failed: %s", exc)
             return _error_usage_summary(days, f"database unavailable: {type(exc).__name__}")
@@ -124,12 +125,13 @@ class UsageSummaryStore:
             "daily_usage": daily_usage,
             "top_keys": top_keys,
             "recent_failures": recent_failures,
+            "provider_latency": provider_latency,
         }
 
 
 def _empty_usage_summary(days: int) -> dict[str, Any]:
     return {"enabled": False, "period_days": days, "totals": {}} | {
-        key: [] for key in ("top_models", "daily_usage", "top_keys", "recent_failures")
+        key: [] for key in ("top_models", "daily_usage", "top_keys", "recent_failures", "provider_latency")
     }
 
 
@@ -226,6 +228,22 @@ order by timestamp desc
 limit 20
 """
 
+PROVIDER_LATENCY_SQL = f"""
+select
+    served_model,
+    provider_model,
+    count(*)::int as requests,
+    coalesce(avg(latency_ms), 0)::float as avg_latency_ms,
+    coalesce(percentile_cont(0.50) within group (order by latency_ms), 0)::float as p50_latency_ms,
+    coalesce(percentile_cont(0.95) within group (order by latency_ms), 0)::float as p95_latency_ms
+from gateway_usage_events
+where {WINDOW_FILTER}
+  and status ~ '^2'
+group by served_model, provider_model
+order by requests desc, served_model asc, provider_model asc
+limit 50
+"""
+
 DASHBOARD_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -310,11 +328,13 @@ DASHBOARD_HTML = """<!doctype html>
     <div class="eyebrow" id="updated">Loading...</div>
     <section class="grid" style="margin-top: 20px;">
       <div class="window span-3"><h2>Readiness</h2><div id="readiness" class="metric">-</div><div id="health-summary" class="metric small" style="margin-top: 8px;"></div></div>
-      <div class="window span-3"><h2>Requests</h2><div id="requests" class="metric">-</div></div>
-      <div class="window span-3"><h2>Tokens</h2><div id="tokens" class="metric">-</div></div>
-      <div class="window span-3"><h2>Est. Spend</h2><div id="spend" class="metric">-</div></div>
+      <div class="window span-2"><h2>Requests</h2><div id="requests" class="metric">-</div></div>
+      <div class="window span-2"><h2>Tokens</h2><div id="tokens" class="metric">-</div></div>
+      <div class="window span-2"><h2>Est. Spend</h2><div id="spend" class="metric">-</div></div>
+      <div class="window span-3"><h2>Avg Latency</h2><div id="latency" class="metric">-</div><div class="muted" style="margin-top: 8px;">ms avg</div></div>
       <div class="window span-6"><h2>Top Models</h2><div id="models"></div></div>
       <div class="window span-6"><h2>Daily Usage</h2><div id="daily"></div></div>
+      <div class="window span-6"><h2>Provider Latency</h2><div id="provider-latency"></div></div>
       <div class="window span-6"><h2>Provider Availability</h2><div id="availability"></div></div>
       <div class="window span-6"><h2>Recent Failures</h2><div id="failures"></div></div>
       <div class="window span-6"><h2>System Health</h2><div id="health"></div></div>
@@ -369,8 +389,10 @@ DASHBOARD_HTML = """<!doctype html>
       document.getElementById("requests").textContent = fmt.format(totals.requests || live.metrics.requests_total || 0);
       document.getElementById("tokens").textContent = fmt.format(totals.total_tokens || 0);
       document.getElementById("spend").textContent = usd.format(totals.estimated_cost_usd || 0);
+      document.getElementById("latency").textContent = `${fmt.format(Math.round(totals.avg_latency_ms || 0))} ms`;
       renderModels(usage.top_models || []);
       renderDaily(usage.daily_usage || []);
+      renderProviderLatency(usage.provider_latency || []);
       renderAvailability(live.metrics.provider_availability || {});
       renderFailures(usage.recent_failures || []);
       renderHealth(live.health || {});
@@ -447,12 +469,24 @@ DASHBOARD_HTML = """<!doctype html>
     }
 
     function renderFailures(rows) {
-      document.getElementById("failures").innerHTML = table(["Provider / Model", "Alias", "Status", "Error", "Fallbacks"], rows.map((row) => [
+      document.getElementById("failures").innerHTML = table(["Provider / Model", "Alias", "Status", "Error", "Latency", "Fallbacks"], rows.map((row) => [
         `<span class="mono">${escapeHtml(row.provider_model || row.served_model)}</span>`,
         `<span class="badge">${escapeHtml(row.served_model)}</span>`,
         `<span class="mono">${badge(escapeHtml(row.status), /^2/.test(row.status) ? "ok" : "error")}</span>`,
         `<span class="mono">${escapeHtml(row.error_class || "-")}</span>`,
+        `${fmt.format(row.latency_ms || 0)} ms`,
         fmt.format(row.fallback_count || 0),
+      ]));
+    }
+
+    function renderProviderLatency(rows) {
+      document.getElementById("provider-latency").innerHTML = table(["Provider / Model", "Alias", "Requests", "Avg", "p50", "p95"], rows.map((row) => [
+        `<span class="mono">${escapeHtml(row.provider_model || row.served_model)}</span>`,
+        `<span class="badge">${escapeHtml(row.served_model)}</span>`,
+        fmt.format(row.requests || 0),
+        `${fmt.format(Math.round(row.avg_latency_ms || 0))} ms`,
+        `${fmt.format(Math.round(row.p50_latency_ms || 0))} ms`,
+        `${fmt.format(Math.round(row.p95_latency_ms || 0))} ms`,
       ]));
     }
 

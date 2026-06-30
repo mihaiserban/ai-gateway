@@ -284,3 +284,4 @@ router_settings:
     - kimi-k2.6-opencodego
   - vision:
     - kimi-k2.6-opencodego
+  max_parallel_requests: 100

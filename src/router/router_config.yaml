@@ -4,6 +4,7 @@ cache_ttl_seconds: 600
 default_model: coder
 retry_base_delay: 0.2
 retry_max_delay: 2.0
+max_concurrent_upstream: 50
 allowed_models:
 - deepseek-v4-flash-ollama
 - deepseek-v4-flash-deepseek

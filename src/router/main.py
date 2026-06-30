@@ -6,8 +6,10 @@ import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
-from typing import Any
+from collections import deque
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import nullcontext
+from typing import Any, cast
 
 import httpx
 from fastapi import FastAPI, Request
@@ -53,9 +55,15 @@ def create_app(
     app.state.redis_url = redis_url if redis_url is not None else os.environ.get("REDIS_URL")
     app.state.database_url = database_url if database_url is not None else os.environ.get("DATABASE_URL")
     app.state.transport = transport
+    app.state.http_client = httpx.AsyncClient(transport=transport)
     app.state.route_config = load_and_validate(
         config_path=config_path,
         litellm_path=litellm_config_path,
+    )
+    app.state.upstream_semaphore = (
+        asyncio.Semaphore(app.state.route_config.max_concurrent_upstream)
+        if app.state.route_config.max_concurrent_upstream > 0
+        else None
     )
     app.state.session_store = _session_store(app.state.redis_url)
     app.state.metrics = Metrics()
@@ -116,6 +124,11 @@ def create_app(
 
         while True:
             upstream_body["model"] = current_model
+            if is_stream:
+                upstream_body["stream_options"] = {
+                    **(upstream_body.get("stream_options") or {}),
+                    "include_usage": True,
+                }
             if current_model in app.state.route_config.cache_key_aliases:
                 upstream_body["prompt_cache_key"] = cache_key
             elif "prompt_cache_key" in upstream_body:
@@ -153,10 +166,7 @@ def create_app(
                 if not should_fallback:
                     break
                 if is_stream:
-                    client = getattr(response, "_stream_client", None)
                     await response.aclose()
-                    if client is not None:
-                        await client.aclose()
 
             next_model = next_fallback(original_model, attempt, app.state.route_config)
             if next_model is None or next_model in tried:
@@ -219,34 +229,54 @@ def create_app(
             except Exception:
                 upstream_payload = None
 
-        await _record_usage_event(
-            app,
-            request=request,
-            session_id=session_id,
-            requested_model=decision.model,
-            selected_model=original_model,
-            served_model=current_model,
-            provider_model=provider_model,
-            reason=decision.reason,
-            status=status,
-            latency_ms=latency_ms,
-            fallback_count=fallback_count,
-            fallback_from=original_model,
-            cache_hit=cache_hit,
-            upstream_payload=upstream_payload,
-            error_class=_exception_class(last_exception),
-            stream=is_stream,
-        )
+        streaming_success = is_stream and last_response is not None and _is_success(last_response)
+
+        if not streaming_success:
+            await _emit_usage_event(
+                app,
+                request=request,
+                session_id=session_id,
+                requested_model=decision.model,
+                selected_model=original_model,
+                served_model=current_model,
+                provider_model=provider_model,
+                reason=decision.reason,
+                status=status,
+                latency_ms=latency_ms,
+                fallback_count=fallback_count,
+                fallback_from=original_model,
+                cache_hit=cache_hit,
+                payload=upstream_payload,
+                error_class=_exception_class(last_exception),
+                stream=is_stream,
+            )
 
         if last_response is not None:
             if is_stream and _is_success(last_response):
-                return _streaming_response(last_response, extra_headers=extra_headers)
+                return _streaming_response(
+                    last_response,
+                    extra_headers=extra_headers,
+                    on_close=_make_usage_event_callback(
+                        app,
+                        request=request,
+                        session_id=session_id,
+                        requested_model=decision.model,
+                        selected_model=original_model,
+                        served_model=current_model,
+                        provider_model=provider_model,
+                        reason=decision.reason,
+                        status=status,
+                        latency_ms=latency_ms,
+                        fallback_count=fallback_count,
+                        fallback_from=original_model,
+                        cache_hit=cache_hit,
+                        error_class=_exception_class(last_exception),
+                        stream=is_stream,
+                    ),
+                )
             if is_stream:
                 content = await last_response.aread()
-                client = getattr(last_response, "_stream_client", None)
                 await last_response.aclose()
-                if client is not None:
-                    await client.aclose()
                 return Response(
                     content=content,
                     status_code=last_response.status_code,
@@ -270,8 +300,9 @@ def create_app(
 
     async def _proxy(request: Request, method: str, path: str) -> Response:
         url = app.state.litellm_base_url + path
-        async with httpx.AsyncClient(transport=app.state.transport, timeout=120) as client:
-            upstream = await client.request(method, url, headers=_forward_headers(request))
+        guard = app.state.upstream_semaphore or nullcontext()
+        async with guard:
+            upstream = await app.state.http_client.request(method, url, headers=_forward_headers(request), timeout=120)
         return _response_from_upstream(upstream)
 
     async def _proxy_json(
@@ -282,8 +313,12 @@ def create_app(
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
         timeout = _timeout_for(app.state.route_config, model)
-        async with httpx.AsyncClient(transport=app.state.transport, timeout=timeout) as client:
-            return await client.post(url, headers=_forward_headers(request), json=body)
+        guard = app.state.upstream_semaphore or nullcontext()
+        async with guard:
+            return cast(
+                httpx.Response,
+                await app.state.http_client.post(url, headers=_forward_headers(request), json=body, timeout=timeout),
+            )
 
     async def _proxy_stream(
         request: Request,
@@ -293,13 +328,11 @@ def create_app(
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
         timeout = _timeout_for(app.state.route_config, model)
-        client = httpx.AsyncClient(transport=app.state.transport, timeout=timeout)
-        response = await client.send(
-            client.build_request("POST", url, headers=_forward_headers(request), json=body),
-            stream=True,
-        )
-        response._stream_client = client  # type: ignore[attr-defined]
-        return response
+        guard = app.state.upstream_semaphore or nullcontext()
+        async with guard:
+            req = app.state.http_client.build_request("POST", url, headers=_forward_headers(request), json=body)
+            req.extensions = {"timeout": {"connect": timeout, "read": timeout, "write": timeout, "pool": timeout}}
+            return cast(httpx.Response, await app.state.http_client.send(req, stream=True))
 
     return app
 
@@ -428,7 +461,7 @@ def _cache_status(cache_hit: bool | None) -> str:
     return "unknown"
 
 
-async def _record_usage_event(
+async def _emit_usage_event(
     app: FastAPI,
     *,
     request: Request,
@@ -443,11 +476,11 @@ async def _record_usage_event(
     fallback_count: int,
     fallback_from: str,
     cache_hit: bool | None,
-    upstream_payload: dict[str, Any] | None,
+    payload: dict[str, Any] | None,
     error_class: str | None,
     stream: bool,
 ) -> None:
-    prompt_tokens, completion_tokens, total_tokens = extract_usage(upstream_payload)
+    prompt_tokens, completion_tokens, total_tokens = extract_usage(payload)
     event = UsageEvent(
         timestamp=time.time(),
         path=str(request.url.path),
@@ -479,6 +512,13 @@ async def _record_usage_event(
         logger.exception("usage_event_sink_failed")
 
 
+def _make_usage_event_callback(app: FastAPI, **kwargs: Any) -> Callable[[dict[str, Any] | None], Awaitable[None]]:
+    async def _callback(payload: dict[str, Any] | None) -> None:
+        await _emit_usage_event(app, payload=payload, **kwargs)
+
+    return _callback
+
+
 def _cache_hit(upstream: httpx.Response) -> bool | None:
     value = upstream.headers.get("x-litellm-cache-hit")
     if value is None:
@@ -506,23 +546,56 @@ def _response_from_upstream(
     )
 
 
+def _extract_usage_from_sse(content: bytes) -> dict[str, Any] | None:
+    if not content:
+        return None
+    text = content.decode("utf-8", errors="replace")
+    for event in text.split("\n\n"):
+        for line in event.splitlines():
+            line = line.strip()
+            if not line.startswith("data: "):
+                continue
+            data = line[6:].strip()
+            if data == "[DONE]":
+                continue
+            try:
+                payload = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            usage = payload.get("usage")
+            if isinstance(usage, dict):
+                return {"usage": usage}
+    return None
+
+
 def _streaming_response(
     upstream: httpx.Response,
     extra_headers: dict[str, str] | None = None,
+    on_close: Callable[[dict[str, Any] | None], Awaitable[None]] | None = None,
 ) -> StreamingResponse:
     content_type = upstream.headers.get("content-type", "text/event-stream")
     headers = _response_headers(upstream, extra_headers)
     headers["content-type"] = content_type
 
     async def body_iterator() -> AsyncIterator[bytes]:
+        tail: deque[bytes] = deque(maxlen=2)
         try:
             async for chunk in upstream.aiter_bytes():
+                tail.append(chunk)
                 yield chunk
         finally:
-            client = getattr(upstream, "_stream_client", None)
+            payload: dict[str, Any] | None = None
+            if tail and on_close is not None:
+                try:
+                    payload = _extract_usage_from_sse(b"".join(tail))
+                except Exception:
+                    payload = None
+            try:
+                if on_close is not None:
+                    await on_close(payload)
+            except Exception:
+                logger.exception("streaming_usage_event_callback_failed")
             await upstream.aclose()
-            if client is not None:
-                await client.aclose()
 
     return StreamingResponse(
         content=body_iterator(),

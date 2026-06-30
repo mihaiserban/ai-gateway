@@ -106,6 +106,16 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
                         "fallback_count": 1,
                     }
                 ],
+                [
+                    {
+                        "served_model": "coder",
+                        "provider_model": "ollama_chat/kimi-k2.7-code",
+                        "requests": 4,
+                        "avg_latency_ms": 125.0,
+                        "p50_latency_ms": 120.0,
+                        "p95_latency_ms": 250.0,
+                    }
+                ],
             ]
 
         def execute(self, sql: str, params: tuple[object, ...] | None = None) -> None:
@@ -139,7 +149,8 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
     assert summary["daily_usage"][0]["day"] == "2026-06-30"
     assert summary["top_keys"][0]["key_hash"] == "abc123"
     assert summary["recent_failures"][0]["status"] == "503"
-    assert len(fake.cursor_obj.calls) == 6
+    assert summary["provider_latency"][0]["p95_latency_ms"] == 250.0
+    assert len(fake.cursor_obj.calls) == 7
     schema_call = fake.cursor_obj.calls[0]
     assert "create table if not exists gateway_usage_events" in schema_call[0].lower()
     assert schema_call[1] == ()
@@ -218,6 +229,7 @@ async def test_dashboard_usage_api_defaults_to_30_days_when_ledger_disabled():
         "daily_usage": [],
         "top_keys": [],
         "recent_failures": [],
+        "provider_latency": [],
     }
 
 

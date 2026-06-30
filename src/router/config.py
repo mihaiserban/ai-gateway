@@ -45,6 +45,7 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     cache_key_aliases = list(data.get("cache_key_aliases") or [])
     provider_models = dict(data.get("provider_models") or {})
     model_prices = _model_prices(data.get("model_prices") or {})
+    max_concurrent_upstream = int(data.get("max_concurrent_upstream", 0))
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
@@ -57,6 +58,7 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         cache_key_aliases=cache_key_aliases,
         provider_models=provider_models,
         model_prices=model_prices,
+        max_concurrent_upstream=max_concurrent_upstream,
     )
 
 

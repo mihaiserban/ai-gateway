@@ -349,11 +349,34 @@ ports. The LiteLLM admin UI is not exposed by default.
 
 ## Updating
 
+From the repo root, use the provided Makefile:
+
 ```bash
 cd /volume1/docker/ai-gateway
-docker compose pull
-docker compose up -d --build
+
+# Regenerate runtime configs after editing gateway.config.yaml
+make regen
+
+# Redeploy the full stack after code/config/router changes
+make redeploy
+
+# Regenerate + redeploy in one step after gateway.config.yaml changes
+make regen-redeploy
+
+# Pull fresh images and redeploy
+make update
+
+# Restart only the router or LiteLLM when only one service changed
+make restart-router
+make restart-litellm
+
+# Tail logs, check health, or run a smoke test
+make logs
+make health
+VIRTUAL_KEY=... make smoke
 ```
+
+For the old manual commands, see the previous version of this runbook.
 
 ## Daily Spend Summary
 
@@ -510,7 +533,8 @@ Back up the Docker volumes before major upgrades:
 - `LITELLM_SALT_KEY` is used to encrypt stored provider credentials. Do not
   rotate it casually after creating models or keys.
 - Keep `.env` only on the NAS or in a password manager.
-- Put provider model changes in `gateway.config.yaml`, run
-  `python3 scripts/generate_configs.py`, then redeploy.
+- Put provider model changes in `gateway.config.yaml`, then run `make regen`
+  from the repo root (or `python3 scripts/generate_configs.py` from `src/`),
+  and redeploy.
 - LiteLLM can warn that custom model costs are missing. That does not block
   calls; add `model_info` pricing later if exact spend reporting matters.

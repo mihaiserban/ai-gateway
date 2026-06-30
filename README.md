@@ -421,7 +421,23 @@ The NAS runbook in `src/README.md` includes the longer operational commands for
 setup, virtual keys, updates, backup and restore, rollback, secret rotation,
 daily spend summaries, and Tailscale-only exposure.
 
-Common commands:
+A `Makefile` in the repo root wraps the most common NAS operations:
+
+```bash
+cd /volume1/docker/ai-gateway
+
+make regen               # regenerate runtime configs from gateway.config.yaml
+make regen-redeploy      # regenerate configs and redeploy the full stack
+make redeploy            # rebuild and restart the full stack
+make update              # pull fresh images and redeploy
+make restart-router      # restart only the router
+make restart-litellm     # restart only LiteLLM
+make health              # show service status + healthz/readyz
+make logs                # tail sticky-router and litellm logs
+VIRTUAL_KEY=... make smoke
+```
+
+Manual equivalents for reference:
 
 ```bash
 cd src

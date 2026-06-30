@@ -6,6 +6,7 @@ router:
   default_model: coder
   retry_base_delay: 0.2
   retry_max_delay: 2.0
+  max_concurrent_upstream: 50
   # Providers that support prompt_cache_key: openai, deepseek, anthropic; not ollama.
   cache_key_aliases: []
 
@@ -14,6 +15,7 @@ litellm:
     drop_params: true
     request_timeout: 120
     num_retries: 3
+    max_parallel_requests: 100
   cache:
     type: redis
     redis_url_env: REDIS_URL

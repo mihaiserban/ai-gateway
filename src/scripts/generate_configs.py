@@ -36,6 +36,7 @@ def render_router_config(config: dict[str, Any]) -> dict[str, Any]:
         "default_model": router.get("default_model", entries[0]["name"]),
         "retry_base_delay": router.get("retry_base_delay", 0.2),
         "retry_max_delay": router.get("retry_max_delay", 2.0),
+        "max_concurrent_upstream": router.get("max_concurrent_upstream", 0),
         "allowed_models": [entry["name"] for entry in entries],
         "fallbacks": {entry["name"]: list(entry.get("fallbacks") or []) for entry in entries},
         "timeouts": {entry["name"]: entry.get("timeout", 120) for entry in entries},
@@ -86,6 +87,12 @@ def render_litellm_config(config: dict[str, Any]) -> dict[str, Any]:
     if callbacks:
         litellm_settings["callbacks"] = callbacks
 
+    router_settings: dict[str, Any] = {
+        "fallbacks": [{entry["name"]: list(entry.get("fallbacks") or [])} for entry in entries],
+    }
+    if max_parallel := settings.get("max_parallel_requests"):
+        router_settings["max_parallel_requests"] = int(max_parallel)
+
     return {
         "model_list": [_render_model(entry, entries_by_name) for entry in entries],
         "litellm_settings": litellm_settings,
@@ -93,9 +100,7 @@ def render_litellm_config(config: dict[str, Any]) -> dict[str, Any]:
             "master_key": _env_ref(general.get("master_key_env", "LITELLM_MASTER_KEY")),
             "database_url": _env_ref(general.get("database_url_env", "DATABASE_URL")),
         },
-        "router_settings": {
-            "fallbacks": [{entry["name"]: list(entry.get("fallbacks") or [])} for entry in entries],
-        },
+        "router_settings": router_settings,
     }
 
 

@@ -30,17 +30,8 @@ def test_timeout_for_default_empty_config():
 
 @pytest.mark.asyncio
 async def test_per_alias_timeout_used_for_proxy(monkeypatch, tmp_path):
-    """The httpx client created for a chat request must use the alias's timeout."""
-    captured: list[httpx.Timeout] = []
-    real_async_client = httpx.AsyncClient
-
-    class CapturingAsyncClient(real_async_client):
-        def __init__(self, *args, **kwargs):
-            timeout = kwargs.get("timeout", httpx.USE_CLIENT_DEFAULT)
-            if timeout is not httpx.USE_CLIENT_DEFAULT and not isinstance(timeout, httpx.Timeout):
-                timeout = httpx.Timeout(timeout)
-            captured.append(timeout)
-            super().__init__(*args, **kwargs)
+    """The persistent httpx client must use the alias's timeout on each request."""
+    captured: list[float] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
@@ -68,7 +59,6 @@ timeouts:
 """,
     )
 
-    monkeypatch.setattr(httpx, "AsyncClient", CapturingAsyncClient)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
@@ -76,6 +66,14 @@ timeouts:
         config_path=str(cfg_path),
         litellm_config_path="/tmp/missing-litellm.yaml",
     )
+
+    _real_post = app.state.http_client.post
+
+    async def _fake_post(url, *, headers=None, json=None, timeout=httpx.USE_CLIENT_DEFAULT):  # noqa: ASYNC109
+        captured.append(timeout)
+        return await _real_post(url, headers=headers, json=json, timeout=timeout)
+
+    app.state.http_client.post = _fake_post
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -85,12 +83,8 @@ timeouts:
         )
 
     assert response.status_code == 200
-    # The inner client created by _proxy_json must have a 5s connect/read timeout.
-    assert captured, "no inner httpx.AsyncClient was constructed"
-    timeout = captured[-1]
-    assert isinstance(timeout, httpx.Timeout)
-    assert timeout.connect == 5
-    assert timeout.read == 5
+    assert captured, "no upstream request was made"
+    assert captured[-1] == 5
 
 
 # ---------------------------------------------------------------------------
