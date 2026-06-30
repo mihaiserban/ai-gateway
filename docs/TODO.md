@@ -62,9 +62,9 @@ turn it into a NAS-ready personal v1.
 
 ## P1: Streaming
 
-- [ ] Implement true SSE streaming passthrough for `/v1/chat/completions`.
-- [ ] Preserve streaming headers and content type.
-- [ ] Add tests for `stream: true`.
+- [x] Implement true SSE streaming passthrough for `/v1/chat/completions`.
+- [x] Preserve streaming headers and content type.
+- [x] Add tests for `stream: true`.
 - [ ] Verify streaming through Docker with `curl -N`.
 
 ## P1: Config
