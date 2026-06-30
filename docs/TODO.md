@@ -50,8 +50,8 @@ turn it into a NAS-ready personal v1.
 
 ## P1: Reliability V1
 
-- [ ] Add configurable request timeouts per alias.
-- [ ] Add exponential backoff for router-level retries.
+- [x] Add configurable request timeouts per alias.
+- [x] Add exponential backoff for router-level retries.
 - [x] Add `X-Gateway-Fallback-From` and `X-Gateway-Fallback-Count` response
       headers.
 - [x] Log structured request metadata: session id hash, selected model, routing
