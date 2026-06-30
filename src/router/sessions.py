@@ -7,11 +7,9 @@ import redis.asyncio as redis
 
 
 class SessionStore(Protocol):
-    async def get(self, session_id: str) -> dict[str, Any] | None:
-        ...
+    async def get(self, session_id: str) -> dict[str, Any] | None: ...
 
-    async def set(self, session_id: str, value: dict[str, Any], ttl_seconds: int) -> None:
-        ...
+    async def set(self, session_id: str, value: dict[str, Any], ttl_seconds: int) -> None: ...
 
 
 class MemorySessionStore:

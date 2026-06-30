@@ -1,0 +1,70 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src"]
+extend-exclude = [
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  "__pycache__",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+  "ASYNC",
+  "B",
+  "C4",
+  "E",
+  "F",
+  "I",
+  "PIE",
+  "PT",
+  "RET",
+  "RUF",
+  "SIM",
+  "UP",
+]
+ignore = [
+  "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/router/tests/**/*.py" = [
+  "PT011",
+]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+files = ["src/router"]
+exclude = ["src/router/tests"]
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+check_untyped_defs = true
+pretty = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src/router/tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["router"]
+omit = [
+  "src/router/tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 80

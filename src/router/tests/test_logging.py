@@ -20,9 +20,7 @@ async def test_chat_logs_request_metadata(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-meta"},
@@ -58,9 +56,7 @@ async def test_chat_logs_fallback_from_when_fallback_occurred(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-fb"},
@@ -86,9 +82,7 @@ async def test_chat_log_omits_raw_token(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": f"Bearer {secret}", "X-Session-Id": "log-secret"},
@@ -112,9 +106,7 @@ async def test_chat_log_omits_prompt_content(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-prompt"},
@@ -135,9 +127,7 @@ async def test_chat_log_on_error_path_logs_error_status(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-err"},
@@ -164,9 +154,7 @@ async def test_chat_log_on_upstream_error_status_logs_status(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-up-err"},
@@ -195,9 +183,7 @@ async def test_chat_stream_logs_request_metadata(caplog):
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
 
     with caplog.at_level(logging.INFO, logger="router"):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-stream"},

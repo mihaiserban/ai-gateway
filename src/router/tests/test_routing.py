@@ -103,9 +103,7 @@ def test_choose_model_uses_configured_classifier_keywords():
 
 def test_choose_model_falls_back_to_default_signals_when_keywords_empty():
     config = RouteConfig(allowed_models={"fast", "opencodego-fast"})
-    request = {
-        "messages": [{"role": "user", "content": "please refactor src/app.py"}]
-    }
+    request = {"messages": [{"role": "user", "content": "please refactor src/app.py"}]}
 
     decision = choose_model(request, session=None, now=1_000.0, config=config)
 

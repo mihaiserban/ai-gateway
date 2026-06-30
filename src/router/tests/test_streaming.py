@@ -5,8 +5,7 @@ import pytest
 
 from router.main import create_app
 
-
-SSE_BODY = b"data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\ndata: [DONE]\n\n"
+SSE_BODY = b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: {"choices":[{"delta":{"content":" world"}}]}\n\ndata: [DONE]\n\n'
 
 
 @pytest.mark.asyncio

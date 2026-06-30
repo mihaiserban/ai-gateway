@@ -5,6 +5,10 @@
 
 *.log
 *.tmp
+.coverage
+.mypy_cache/
+.ruff_cache/
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/

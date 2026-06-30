@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
 import httpx
@@ -9,10 +8,10 @@ import pytest
 from router.main import create_app
 from router.routing import RouteConfig, _timeout_for
 
-
 # ---------------------------------------------------------------------------
 # Per-alias timeout helper
 # ---------------------------------------------------------------------------
+
 
 def test_timeout_for_returns_configured_value():
     config = RouteConfig(timeouts={"deepseek-pro": 5})
@@ -30,7 +29,7 @@ def test_timeout_for_default_empty_config():
 
 
 @pytest.mark.asyncio
-async def test_per_alias_timeout_used_for_proxy(monkeypatch):
+async def test_per_alias_timeout_used_for_proxy(monkeypatch, tmp_path):
     """The httpx client created for a chat request must use the alias's timeout."""
     captured: list[httpx.Timeout] = []
     real_async_client = httpx.AsyncClient
@@ -48,10 +47,9 @@ async def test_per_alias_timeout_used_for_proxy(monkeypatch):
 
     transport = httpx.MockTransport(handler)
 
-    cfg_path = "/tmp/test-alias-timeout-config.yaml"
-    with open(cfg_path, "w") as fh:
-        fh.write(
-            """
+    cfg_path = tmp_path / "test-alias-timeout-config.yaml"
+    cfg_path.write_text(
+        """
 cache_ttl_seconds: 600
 allowed_models:
   - fast
@@ -68,14 +66,14 @@ fallbacks:
 timeouts:
   opencodego-fast: 5
 """,
-        )
+    )
 
     monkeypatch.setattr(httpx, "AsyncClient", CapturingAsyncClient)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
         transport=transport,
-        config_path=cfg_path,
+        config_path=str(cfg_path),
         litellm_config_path="/tmp/missing-litellm.yaml",
     )
 
@@ -98,6 +96,7 @@ timeouts:
 # ---------------------------------------------------------------------------
 # Backoff between fallback attempts
 # ---------------------------------------------------------------------------
+
 
 def _recorder():
     calls: list[float] = []
@@ -267,6 +266,7 @@ async def test_backoff_no_sleep_on_non_retryable_404():
 # ---------------------------------------------------------------------------
 # Config exposure
 # ---------------------------------------------------------------------------
+
 
 def test_route_config_defaults_for_backoff():
     config = RouteConfig()

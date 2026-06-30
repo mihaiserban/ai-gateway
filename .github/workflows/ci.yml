@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            src/router/requirements.txt
+            src/router/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r src/router/requirements-dev.txt
+
+      - name: Check formatting
+        run: python -m ruff format --check .
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Type check
+        run: python -m mypy src/router
+
+      - name: Test
+        run: python -m pytest --cov=router --cov-fail-under=80 src/router/tests
+
+      - name: Audit dependencies
+        run: python -m pip_audit -r src/router/requirements.txt -r src/router/requirements-dev.txt
+
+      - name: Scan for secrets
+        run: detect-secrets-hook --baseline .secrets.baseline --exclude-files '^src/\.env\.example$' $(git ls-files)
+
+      - name: Validate Docker Compose
+        run: |
+          cp src/.env.example src/.env
+          docker compose -f src/docker-compose.yml config --quiet

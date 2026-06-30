@@ -95,7 +95,6 @@ class Metrics:
                 "served_model_counts": dict(self.served_model_counts),
                 "cache_counts": dict(self.cache_counts),
                 "provider_availability": {
-                    model: availability.snapshot()
-                    for model, availability in self.provider_availability.items()
+                    model: availability.snapshot() for model, availability in self.provider_availability.items()
                 },
             }

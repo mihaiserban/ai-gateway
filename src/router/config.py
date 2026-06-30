@@ -9,7 +9,6 @@ import yaml
 
 from router.routing import DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS, RouteConfig
 
-
 logger = logging.getLogger("router.config")
 
 
@@ -23,9 +22,7 @@ class ConfigValidationError(ValueError):
 
 def load_route_config(config_path: str | None = None) -> RouteConfig:
     """Load a :class:`RouteConfig` from YAML, falling back to defaults."""
-    path = Path(config_path) if config_path else Path(
-        os.environ.get("ROUTER_CONFIG_PATH", DEFAULT_CONFIG_PATH)
-    )
+    path = Path(config_path) if config_path else Path(os.environ.get("ROUTER_CONFIG_PATH", DEFAULT_CONFIG_PATH))
 
     if not path.exists():
         logger.warning("router config not found at %s; using defaults", path)
@@ -69,14 +66,10 @@ def validate_route_config(config: RouteConfig) -> None:
 
     for key, targets in config.fallbacks.items():
         if key not in allowed:
-            raise ConfigValidationError(
-                f"fallback key {key!r} is not in allowed_models"
-            )
+            raise ConfigValidationError(f"fallback key {key!r} is not in allowed_models")
         for target in targets:
             if target not in allowed:
-                raise ConfigValidationError(
-                    f"fallback target {target!r} (under {key!r}) is not in allowed_models"
-                )
+                raise ConfigValidationError(f"fallback target {target!r} (under {key!r}) is not in allowed_models")
 
 
 def cross_check_litellm(config: RouteConfig, litellm_path: str | None = None) -> None:
@@ -84,9 +77,7 @@ def cross_check_litellm(config: RouteConfig, litellm_path: str | None = None) ->
 
     If the LiteLLM config file is missing, warn but do not crash.
     """
-    path = Path(litellm_path) if litellm_path else Path(
-        os.environ.get("LITELLM_CONFIG_PATH", DEFAULT_LITELLM_PATH)
-    )
+    path = Path(litellm_path) if litellm_path else Path(os.environ.get("LITELLM_CONFIG_PATH", DEFAULT_LITELLM_PATH))
 
     if not path.exists():
         logger.warning("litellm config not found at %s; skipping cross-check", path)
@@ -105,10 +96,7 @@ def cross_check_litellm(config: RouteConfig, litellm_path: str | None = None) ->
 
     missing = config.allowed_models - litellm_names
     if missing:
-        raise ConfigValidationError(
-            "allowed_models missing from litellm model_list: "
-            + ", ".join(sorted(missing))
-        )
+        raise ConfigValidationError("allowed_models missing from litellm model_list: " + ", ".join(sorted(missing)))
 
 
 def load_and_validate(

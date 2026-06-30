@@ -5,7 +5,8 @@ import hashlib
 import logging
 import os
 import time
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, Request
@@ -17,7 +18,6 @@ from router.metrics import Metrics
 from router.redaction import redact_payload
 from router.routing import _timeout_for, choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
-
 
 FORWARDED_HEADERS = {"authorization", "content-type", "accept"}
 CACHE_RESPONSE_HEADERS = {
@@ -38,7 +38,9 @@ def create_app(
     litellm_config_path: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Personal AI Gateway Router")
-    app.state.litellm_base_url = (litellm_base_url or os.environ.get("LITELLM_BASE_URL") or "http://litellm:4000").rstrip("/")
+    app.state.litellm_base_url = (
+        litellm_base_url or os.environ.get("LITELLM_BASE_URL") or "http://litellm:4000"
+    ).rstrip("/")
     app.state.redis_url = redis_url if redis_url is not None else os.environ.get("REDIS_URL")
     app.state.database_url = database_url if database_url is not None else os.environ.get("DATABASE_URL")
     app.state.transport = transport
@@ -136,7 +138,7 @@ def create_app(
             if next_model is None or next_model in tried:
                 break
             delay = min(
-                app.state.route_config.retry_base_delay * (2 ** attempt),
+                app.state.route_config.retry_base_delay * (2**attempt),
                 app.state.route_config.retry_max_delay,
             )
             await app.state.async_sleep(delay)
@@ -298,11 +300,7 @@ def _cache_hit(upstream: httpx.Response) -> bool | None:
 
 
 def _forward_headers(request: Request) -> dict[str, str]:
-    return {
-        key: value
-        for key, value in request.headers.items()
-        if key.lower() in FORWARDED_HEADERS
-    }
+    return {key: value for key, value in request.headers.items() if key.lower() in FORWARDED_HEADERS}
 
 
 def _response_from_upstream(
@@ -371,10 +369,7 @@ def _fallback_session_id(body: dict[str, Any], token: str | None = None) -> str:
     if not system_text and not user_text and not token_fingerprint:
         return "anonymous"
 
-    digest = hashlib.sha256(
-        f"{token_fingerprint}:{system_text}:{user_text}".encode("utf-8")
-    ).hexdigest()
-    return digest
+    return hashlib.sha256(f"{token_fingerprint}:{system_text}:{user_text}".encode()).hexdigest()
 
 
 def _content_text(content: Any) -> str:

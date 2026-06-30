@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 import pytest
 
-from router.routing import RouteConfig, DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS
 from router import config as config_mod
-
+from router.routing import DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS, RouteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_yaml(path: Path, data: str) -> Path:
     path.write_text(data)
@@ -32,6 +31,7 @@ def _write_litellm(path: Path, model_names: list[str]) -> Path:
 # ---------------------------------------------------------------------------
 # Loading
 # ---------------------------------------------------------------------------
+
 
 def test_load_route_config_from_yaml_populates_fields(tmp_path):
     cfg_path = _write_yaml(
@@ -101,6 +101,7 @@ allowed_models:
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def _good_yaml(tmp_path, extra: str = "") -> Path:
     return _write_yaml(
@@ -172,6 +173,7 @@ fallbacks:
 # ---------------------------------------------------------------------------
 # LiteLLM cross-check
 # ---------------------------------------------------------------------------
+
 
 def test_cross_check_ok_when_allowed_models_in_litellm(tmp_path):
     cfg_path = _good_yaml(tmp_path)

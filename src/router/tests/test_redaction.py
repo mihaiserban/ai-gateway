@@ -1,4 +1,4 @@
-from router.redaction import redact_text, redact_payload
+from router.redaction import redact_payload, redact_text
 
 
 def test_redacts_secret_like_values():

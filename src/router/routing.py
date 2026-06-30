@@ -5,7 +5,6 @@ from typing import Any
 
 from router.classifier import CODE_SIGNALS, REASONING_SIGNALS, classify_request
 
-
 DEFAULT_ALLOWED_MODELS = {
     "fast",
     "deepseek-pro",

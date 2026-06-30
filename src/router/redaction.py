@@ -4,10 +4,7 @@ import copy
 import re
 from typing import Any
 
-
-ENV_SECRET_RE = re.compile(
-    r"\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|MASTER_KEY|SALT_KEY))=([^\s]+)"
-)
+ENV_SECRET_RE = re.compile(r"\b([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|MASTER_KEY|SALT_KEY))=([^\s]+)")
 SK_SECRET_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")
 OLLAMA_SECRET_RE = re.compile(r"\b[0-9a-f]{32}\.[A-Za-z0-9_-]{8,}\b")
 

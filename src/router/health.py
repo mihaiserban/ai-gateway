@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import socket
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 import redis.asyncio as redis
-
 
 HEALTH_TIMEOUT = 2.0
 
@@ -20,7 +20,7 @@ async def check_litellm(base_url: str, transport: httpx.AsyncBaseTransport | Non
         return "degraded"
 
 
-async def check_redis(app_state) -> str:
+async def check_redis(app_state: Any) -> str:
     redis_url = getattr(app_state, "redis_url", None)
     if not redis_url:
         return "disabled"
@@ -50,7 +50,7 @@ def check_postgres(database_url: str | None) -> str:
         return "degraded"
 
 
-async def gather_health(app_state) -> dict[str, str]:
+async def gather_health(app_state: Any) -> dict[str, str]:
     litellm = await check_litellm(app_state.litellm_base_url, app_state.transport)
     redis_status = await check_redis(app_state)
     postgres_status = check_postgres(getattr(app_state, "database_url", None))
@@ -67,7 +67,5 @@ async def gather_health(app_state) -> dict[str, str]:
 
 def all_ready(statuses: dict[str, str]) -> bool:
     return all(
-        value == "ok"
-        for key, value in statuses.items()
-        if key not in ("status", "router") and value != "disabled"
+        value == "ok" for key, value in statuses.items() if key not in ("status", "router") and value != "disabled"
     )
