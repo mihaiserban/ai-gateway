@@ -113,6 +113,27 @@ Successful chat responses include gateway routing headers:
 LiteLLM cache headers such as `x-litellm-cache-hit` and
 `x-litellm-cache-key` are preserved when upstream returns them.
 
+## Live Operations Dashboard
+
+The router serves a read-only dashboard at:
+
+```text
+http://<host>:4100/dashboard
+```
+
+The dashboard combines live router state with the prompt-free Postgres usage
+ledger:
+
+- `/dashboard/api/live` reads health, readiness, router metrics, and routing
+  config.
+- `/dashboard/api/usage?days=30` reads `gateway_usage_events` for top models,
+  daily usage, token counts, estimated spend, top hashed key IDs, and recent
+  failures.
+
+The default statistics window is 30 days. The UI also supports 24-hour and
+7-day views. It does not display prompts, responses, raw bearer tokens, or raw
+session IDs.
+
 ## Persistent Usage Ledger
 
 The router emits prompt-free usage events to an internal `usage-ledger` service.

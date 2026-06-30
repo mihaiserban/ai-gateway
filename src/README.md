@@ -160,6 +160,19 @@ counts every upstream attempt, including failed attempts before a fallback:
 }
 ```
 
+## Dashboard
+
+Open the live operations dashboard from the LAN or Tailscale network:
+
+```text
+http://<nas-host>:4100/dashboard
+```
+
+Use it to check dependency readiness, request volume, fallback behavior, cache
+counts, provider availability, token usage by model, estimated spend, and recent
+failed upstream attempts. Historical cards use the router-owned
+`gateway_usage_events` table and default to the last 30 days.
+
 ## Persistent Usage Ledger
 
 The router emits prompt-free usage events to an internal `usage-ledger` service.

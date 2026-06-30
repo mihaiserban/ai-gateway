@@ -84,6 +84,8 @@ All findings from the initial MVP review have been addressed:
 - [x] Add a daily spend summary command or runbook section.
 - [x] Add a lightweight log format that is easy to grep on the NAS.
 - [x] Add a prompt-free persistent usage ledger through an internal ledger service.
+- [x] Add a read-only live operations dashboard backed by `/metrics` and the
+      Postgres usage ledger.
 
 ## P2: Caching
 
