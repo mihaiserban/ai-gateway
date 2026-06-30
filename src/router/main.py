@@ -97,7 +97,10 @@ def create_app(
                 if not _is_retryable_status(response.status_code):
                     break
                 if is_stream:
+                    client = getattr(response, "_stream_client", None)
                     await response.aclose()
+                    if client is not None:
+                        await client.aclose()
 
             next_model = next_fallback(original_model, attempt, app.state.route_config)
             if next_model is None or next_model in tried:
@@ -146,6 +149,18 @@ def create_app(
         if last_response is not None:
             if is_stream and _is_success(last_response):
                 return _streaming_response(last_response, extra_headers=extra_headers)
+            if is_stream:
+                content = await last_response.aread()
+                client = getattr(last_response, "_stream_client", None)
+                await last_response.aclose()
+                if client is not None:
+                    await client.aclose()
+                return Response(
+                    content=content,
+                    status_code=last_response.status_code,
+                    media_type=last_response.headers.get("content-type", "application/json"),
+                    headers=extra_headers,
+                )
             return _response_from_upstream(last_response, extra_headers=extra_headers)
 
         raise last_exception if last_exception is not None else RuntimeError("upstream request failed")
@@ -179,10 +194,12 @@ def create_app(
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
         client = httpx.AsyncClient(transport=app.state.transport, timeout=120)
-        return await client.send(
+        response = await client.send(
             client.build_request("POST", url, headers=_forward_headers(request), json=body),
             stream=True,
         )
+        response._stream_client = client  # type: ignore[attr-defined]
+        return response
 
     return app
 
@@ -252,7 +269,10 @@ def _streaming_response(
             async for chunk in upstream.aiter_bytes():
                 yield chunk
         finally:
+            client = getattr(upstream, "_stream_client", None)
             await upstream.aclose()
+            if client is not None:
+                await client.aclose()
 
     return StreamingResponse(
         content=body_iterator(),
