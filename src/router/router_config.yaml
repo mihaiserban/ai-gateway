@@ -1,33 +1,81 @@
 # Generated from src/gateway.config.yaml. Do not edit directly.
 
 cache_ttl_seconds: 600
-default_model: fast
+default_model: coder
 retry_base_delay: 0.2
 retry_max_delay: 2.0
 allowed_models:
-- fast
-- deepseek-pro
-- opencodego-fast
-- opencodego-code
-- ollama-cloud
+- explorer
+- explorer-ds
+- explorer-ocg
+- planner
+- planner-ocg
+- coder
+- coder-ocg
+- coder-dsp
+- coder-dsp-ds
+- coder-fast
+- coder-fast-k26
+- vision
+- vision-ocg
 fallbacks:
-  fast:
-  - ollama-cloud
-  deepseek-pro:
-  - opencodego-code
-  - fast
-  opencodego-fast:
-  - fast
-  - deepseek-pro
-  opencodego-code:
-  - deepseek-pro
-  - fast
-  ollama-cloud:
-  - fast
+  explorer:
+  - explorer-ds
+  - explorer-ocg
+  explorer-ds:
+  - explorer-ocg
+  explorer-ocg: []
+  planner:
+  - planner-ocg
+  - coder
+  planner-ocg:
+  - coder
+  coder:
+  - coder-ocg
+  - coder-dsp
+  - coder-dsp-ds
+  coder-ocg:
+  - coder-dsp
+  - coder-dsp-ds
+  coder-dsp:
+  - coder-dsp-ds
+  coder-dsp-ds: []
+  coder-fast:
+  - coder-fast-k26
+  - coder
+  coder-fast-k26:
+  - coder
+  vision:
+  - vision-ocg
+  - coder
+  vision-ocg:
+  - coder
 timeouts:
-  fast: 120
-  deepseek-pro: 120
-  opencodego-fast: 120
-  opencodego-code: 120
-  ollama-cloud: 120
+  explorer: 60
+  explorer-ds: 60
+  explorer-ocg: 60
+  planner: 120
+  planner-ocg: 120
+  coder: 120
+  coder-ocg: 120
+  coder-dsp: 120
+  coder-dsp-ds: 120
+  coder-fast: 60
+  coder-fast-k26: 60
+  vision: 120
+  vision-ocg: 120
 cache_key_aliases: []
+provider_models:
+  explorer: ollama_chat/deepseek-v4-flash
+  explorer-ds: deepseek/deepseek-v4-flash
+  explorer-ocg: openai/deepseek-v4-flash
+  planner: ollama_chat/glm-5.2
+  planner-ocg: openai/glm-5.2
+  coder: ollama_chat/kimi-k2.7-code
+  coder-ocg: openai/kimi-k2.7-code
+  coder-dsp: ollama_chat/deepseek-v4-pro
+  coder-dsp-ds: deepseek/deepseek-v4-pro
+  coder-fast: ollama_chat/deepseek-v4-flash
+  coder-fast-k26: ollama_chat/kimi-k2.6
+  vision: ollama_chat/kimi-k2.6
+  vision-ocg: openai/kimi-k2.6

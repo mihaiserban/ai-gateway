@@ -120,6 +120,7 @@ curl http://localhost:4100/v1/chat/completions \
 The router adds these response headers:
 
 - `X-Gateway-Model`: selected LiteLLM alias
+- `X-Gateway-Provider-Model`: resolved provider/model string (e.g. `openai/kimi-k2.7-code`)
 - `X-Gateway-Reason`: `explicit-model`, `warm-session`, or `default-model`
 - `X-Gateway-Fallback-Count`: number of fallback hops (0 when no fallback)
 - `X-Gateway-Fallback-From`: original alias, only present when a fallback occurred
@@ -225,13 +226,26 @@ not configured as an upstream provider.
 
 ## Active Aliases
 
-Use model aliases from `gateway.config.yaml`:
+Use model aliases from `gateway.config.yaml`. All primaries target Ollama Cloud
+(largest subscription). Fallback chains use different providers for resilience.
 
-- `fast`: DeepSeek V4 Flash direct API
-- `deepseek-pro`: DeepSeek V4 Pro direct API
-- `opencodego-fast`: OpenCode Go `kimi-k2.7-code`
-- `opencodego-code`: OpenCode Go `deepseek-v4-pro`
-- `ollama-cloud`: Ollama Cloud `gemma3:27b`
+### Semantic aliases (use these in agents)
+
+| Alias | Primary model | Purpose |
+|---|---|---|
+| `explorer` | Ollama `deepseek-v4-flash` | Fast/cheap search, simple tasks |
+| `planner` | Ollama `glm-5.2` | Strong reasoning, planning, analysis |
+| `coder` | Ollama `kimi-k2.7-code` | Primary coding workhorse |
+| `coder-fast` | Ollama `deepseek-v4-flash` | Quick edits, commits |
+| `vision` | Ollama `kimi-k2.6` | Multimodal image understanding |
+
+### Internal aliases (only used as fallbacks)
+
+- `explorer-ds`, `explorer-ocg` — same model via DeepSeek/OpenCode Go
+- `planner-ocg` — glm-5.2 via OpenCode Go
+- `coder-ocg`, `coder-dsp`, `coder-dsp-ds` — kimi-k2.7-code/deepseek-v4-pro via other providers
+- `coder-fast-k26` — kimi-k2.6 fallback for coder-fast
+- `vision-ocg` — kimi-k2.6 via OpenCode Go
 
 Copilot Pro is intentionally skipped for now. Codex Pro is a client that can
 call this gateway; it is not configured as an upstream provider.

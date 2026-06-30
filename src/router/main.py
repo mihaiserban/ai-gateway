@@ -27,6 +27,11 @@ CACHE_RESPONSE_HEADERS = {
 }
 
 logger = logging.getLogger("router")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _router_handler = logging.StreamHandler()
+    _router_handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_router_handler)
 
 
 def create_app(
@@ -154,6 +159,7 @@ def create_app(
 
         fallback_count = attempt
         latency_ms = int((time.perf_counter() - start) * 1000)
+        provider_model = app.state.route_config.provider_models.get(current_model, "")
 
         if last_response is not None and _is_success(last_response):
             await app.state.session_store.set(
@@ -169,6 +175,7 @@ def create_app(
 
         extra_headers = {
             "X-Gateway-Model": current_model,
+            "X-Gateway-Provider-Model": provider_model,
             "X-Gateway-Reason": decision.reason,
             "X-Gateway-Fallback-Count": str(fallback_count),
         }
@@ -182,6 +189,7 @@ def create_app(
         _log_request(
             session_id,
             current_model,
+            provider_model,
             decision.reason,
             status,
             latency_ms,
@@ -264,6 +272,7 @@ def _is_success(response: httpx.Response) -> bool:
 def _log_request(
     session_id: str,
     model: str,
+    provider_model: str,
     reason: str,
     status: int | str,
     latency_ms: int,
@@ -274,11 +283,15 @@ def _log_request(
     parts = [
         f"session_id_hash={session_id_hash}",
         f"model={model}",
+    ]
+    if provider_model:
+        parts.append(f"provider_model={provider_model}")
+    parts.extend([
         f"reason={reason}",
         f"status={status}",
         f"latency_ms={latency_ms}",
         f"fallback_count={fallback_count}",
-    ]
+    ])
     if fallback_count > 0:
         parts.append(f"fallback_from={fallback_from}")
     logger.info(" ".join(parts))

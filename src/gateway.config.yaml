@@ -3,7 +3,7 @@
 
 router:
   cache_ttl_seconds: 600
-  default_model: fast
+  default_model: coder
   retry_base_delay: 0.2
   retry_max_delay: 2.0
   # Providers that support prompt_cache_key: openai, deepseek, anthropic; not ollama.
@@ -13,71 +13,171 @@ litellm:
   settings:
     drop_params: true
     request_timeout: 120
-    num_retries: 1
+    num_retries: 3
   cache:
     type: redis
     redis_url_env: REDIS_URL
   general:
     master_key_env: LITELLM_MASTER_KEY
     database_url_env: DATABASE_URL
+  logging:
+    callbacks:
+      - custom_logger.ProviderModelLogger
 
 models:
-  - name: fast
+  # --- Explorer: fast/cheap for search and simple tasks ---
+  - name: explorer
+    litellm_model: ollama_chat/deepseek-v4-flash
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 60
+    fallbacks:
+      - explorer-ds
+      - explorer-ocg
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: explorer-ds
     litellm_model: deepseek/deepseek-v4-flash
     api_key_env: DEEPSEEK_API_KEY
-    timeout: 120
+    timeout: 60
     fallbacks:
-      - ollama-cloud
+      - explorer-ocg
     model_info:
       input_cost_per_token: 0.00000014
       output_cost_per_token: 0.00000028
 
-  - name: deepseek-pro
-    litellm_model: deepseek/deepseek-v4-pro
-    api_key_env: DEEPSEEK_API_KEY
-    timeout: 120
-    fallbacks:
-      - opencodego-code
-      - fast
-    model_info:
-      input_cost_per_token: 0.00000028
-      output_cost_per_token: 0.00000056
-
-  - name: opencodego-fast
-    litellm_model: openai/kimi-k2.7-code
+  - name: explorer-ocg
+    litellm_model: openai/deepseek-v4-flash
     api_base_env: OPENCODE_GO_API_BASE
     api_key_env: OPENCODE_GO_API_KEY
-    timeout: 120
-    fallbacks:
-      - fast
-      - deepseek-pro
+    timeout: 60
     additional_drop_params:
       - reasoningSummary
     model_info:
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
 
-  - name: opencodego-code
-    litellm_model: openai/deepseek-v4-pro
-    api_base_env: OPENCODE_GO_API_BASE
-    api_key_env: OPENCODE_GO_API_KEY
-    timeout: 120
-    fallbacks:
-      - deepseek-pro
-      - fast
-    additional_drop_params:
-      - reasoningSummary
-    model_info:
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: ollama-cloud
-    litellm_model: ollama_chat/gemma3:27b
+  # --- Planner: strong reasoning for planning and analysis ---
+  - name: planner
+    litellm_model: ollama_chat/glm-5.2
     api_base_env: OLLAMA_API_BASE
     api_key_env: OLLAMA_API_KEY
     timeout: 120
     fallbacks:
-      - fast
+      - planner-ocg
+      - coder
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: planner-ocg
+    litellm_model: openai/glm-5.2
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    timeout: 120
+    additional_drop_params:
+      - reasoningSummary
+    fallbacks:
+      - coder
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  # --- Coder: primary coding workhorse ---
+  - name: coder
+    litellm_model: ollama_chat/kimi-k2.7-code
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 120
+    fallbacks:
+      - coder-ocg
+      - coder-dsp
+      - coder-dsp-ds
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: coder-ocg
+    litellm_model: openai/kimi-k2.7-code
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    timeout: 120
+    additional_drop_params:
+      - reasoningSummary
+    fallbacks:
+      - coder-dsp
+      - coder-dsp-ds
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: coder-dsp
+    litellm_model: ollama_chat/deepseek-v4-pro
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 120
+    fallbacks:
+      - coder-dsp-ds
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: coder-dsp-ds
+    litellm_model: deepseek/deepseek-v4-pro
+    api_key_env: DEEPSEEK_API_KEY
+    timeout: 120
+    model_info:
+      input_cost_per_token: 0.00000028
+      output_cost_per_token: 0.00000056
+
+  # --- Coder-fast: quick edits and commits ---
+  - name: coder-fast
+    litellm_model: ollama_chat/deepseek-v4-flash
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 60
+    fallbacks:
+      - coder-fast-k26
+      - coder
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: coder-fast-k26
+    litellm_model: ollama_chat/kimi-k2.6
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 60
+    fallbacks:
+      - coder
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  # --- Vision: multimodal image understanding ---
+  - name: vision
+    litellm_model: ollama_chat/kimi-k2.6
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 120
+    fallbacks:
+      - vision-ocg
+      - coder
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: vision-ocg
+    litellm_model: openai/kimi-k2.6
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    timeout: 120
+    additional_drop_params:
+      - reasoningSummary
+    fallbacks:
+      - coder
     model_info:
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0

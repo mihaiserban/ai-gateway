@@ -17,48 +17,51 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_render_router_config_from_gateway_config():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
+    models = config["models"]
 
     router_config = render_router_config(config)
 
     assert router_config["cache_ttl_seconds"] == 600
     assert router_config["retry_base_delay"] == 0.2
     assert router_config["retry_max_delay"] == 2.0
-    assert router_config["default_model"] == "fast"
-    assert router_config["allowed_models"] == [
-        "fast",
-        "deepseek-pro",
-        "opencodego-fast",
-        "opencodego-code",
-        "ollama-cloud",
-    ]
-    assert router_config["fallbacks"]["deepseek-pro"] == ["opencodego-code", "fast"]
-    assert router_config["timeouts"]["opencodego-fast"] == 120
-    assert "classifier_keywords" not in router_config
+    assert router_config["default_model"] == "coder"
+    assert router_config["allowed_models"] == [model["name"] for model in models]
+    assert router_config["fallbacks"] == {
+        model["name"]: list(model.get("fallbacks") or []) for model in models
+    }
+    assert router_config["timeouts"] == {
+        model["name"]: model.get("timeout", 120) for model in models
+    }
     assert router_config["cache_key_aliases"] == []
+    assert router_config["provider_models"] == {
+        model["name"]: model["litellm_model"] for model in models
+    }
 
 
 def test_render_litellm_config_from_gateway_config():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
+    models = config["models"]
 
     litellm_config = render_litellm_config(config)
 
-    first_model = litellm_config["model_list"][0]
-    assert first_model["model_name"] == "fast"
-    assert first_model["litellm_params"] == {
-        "model": "deepseek/deepseek-v4-flash",
-        "api_key": "os.environ/DEEPSEEK_API_KEY",
-    }
-    opencode_model = litellm_config["model_list"][2]
-    assert opencode_model["litellm_params"]["api_base"] == "os.environ/OPENCODE_GO_API_BASE"
-    assert opencode_model["litellm_params"]["additional_drop_params"] == ["reasoningSummary"]
+    first_entry = litellm_config["model_list"][0]
+    first_cfg = models[0]
+    assert first_entry["model_name"] == first_cfg["name"]
+    assert first_entry["litellm_params"]["model"] == first_cfg["litellm_model"]
+    assert first_entry["litellm_params"]["api_key"] == f"os.environ/{first_cfg['api_key_env']}"
+    if "api_base_env" in first_cfg:
+        assert first_entry["litellm_params"]["api_base"] == f"os.environ/{first_cfg['api_base_env']}"
+
+    # Spot-check a model that carries additional_drop_params.
+    model_with_drop_params = next(
+        m for m in litellm_config["model_list"] if "additional_drop_params" in m["litellm_params"]
+    )
+    assert model_with_drop_params["litellm_params"]["additional_drop_params"] == ["reasoningSummary"]
     assert litellm_config["litellm_settings"]["cache_params"]["redis_url"] == "os.environ/REDIS_URL"
+    assert litellm_config["litellm_settings"]["callbacks"] == config["litellm"]["logging"]["callbacks"]
     assert litellm_config["general_settings"]["master_key"] == "os.environ/LITELLM_MASTER_KEY"
     assert litellm_config["router_settings"]["fallbacks"] == [
-        {"fast": ["ollama-cloud"]},
-        {"deepseek-pro": ["opencodego-code", "fast"]},
-        {"opencodego-fast": ["fast", "deepseek-pro"]},
-        {"opencodego-code": ["deepseek-pro", "fast"]},
-        {"ollama-cloud": ["fast"]},
+        {model["name"]: list(model.get("fallbacks") or [])} for model in models
     ]
 
 
@@ -68,7 +71,7 @@ def test_validation_rejects_unknown_fallback_target(tmp_path):
         """
 router:
   cache_ttl_seconds: 600
-  default_model: fast
+  default_model: coder
   retry_base_delay: 0.2
   retry_max_delay: 2.0
   cache_key_aliases: []
@@ -84,10 +87,11 @@ litellm:
     master_key_env: LITELLM_MASTER_KEY
     database_url_env: DATABASE_URL
 models:
-  - name: fast
-    litellm_model: deepseek/deepseek-v4-flash
-    api_key_env: DEEPSEEK_API_KEY
-    timeout: 120
+  - name: explorer
+    litellm_model: ollama_chat/deepseek-v4-flash
+    api_key_env: OLLAMA_API_KEY
+    api_base_env: OLLAMA_API_BASE
+    timeout: 60
     fallbacks:
       - missing
     model_info:

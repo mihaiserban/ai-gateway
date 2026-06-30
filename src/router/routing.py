@@ -4,19 +4,33 @@ from dataclasses import dataclass, field
 from typing import Any
 
 DEFAULT_ALLOWED_MODELS = {
-    "fast",
-    "deepseek-pro",
-    "opencodego-fast",
-    "opencodego-code",
-    "ollama-cloud",
+    "explorer",
+    "explorer-ds",
+    "explorer-ocg",
+    "planner",
+    "planner-ocg",
+    "coder",
+    "coder-ocg",
+    "coder-dsp",
+    "coder-dsp-ds",
+    "coder-fast",
+    "coder-fast-k26",
+    "vision",
+    "vision-ocg",
 }
 
 DEFAULT_FALLBACKS = {
-    "fast": ["ollama-cloud"],
-    "deepseek-pro": ["opencodego-code", "fast"],
-    "opencodego-fast": ["fast", "deepseek-pro"],
-    "opencodego-code": ["deepseek-pro", "fast"],
-    "ollama-cloud": ["fast"],
+    "explorer": ["explorer-ds", "explorer-ocg"],
+    "explorer-ds": ["explorer-ocg"],
+    "planner": ["planner-ocg", "coder"],
+    "planner-ocg": ["coder"],
+    "coder": ["coder-ocg", "coder-dsp", "coder-dsp-ds"],
+    "coder-ocg": ["coder-dsp", "coder-dsp-ds"],
+    "coder-dsp": ["coder-dsp-ds"],
+    "coder-fast": ["coder-fast-k26", "coder"],
+    "coder-fast-k26": ["coder"],
+    "vision": ["vision-ocg", "coder"],
+    "vision-ocg": ["coder"],
 }
 
 
@@ -26,13 +40,14 @@ DEFAULT_TIMEOUT_SECONDS = 120
 @dataclass(frozen=True)
 class RouteConfig:
     cache_ttl_seconds: int = 600
-    default_model: str = "fast"
+    default_model: str = "coder"
     allowed_models: set[str] = field(default_factory=lambda: set(DEFAULT_ALLOWED_MODELS))
     fallbacks: dict[str, list[str]] = field(default_factory=lambda: dict(DEFAULT_FALLBACKS))
     timeouts: dict[str, int] = field(default_factory=dict)
     retry_base_delay: float = 0.2
     retry_max_delay: float = 2.0
     cache_key_aliases: list[str] = field(default_factory=list)
+    provider_models: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -37,6 +37,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       STORE_MODEL_IN_DB: "True"
       REDIS_URL: ${REDIS_URL}
+      PYTHONPATH: /app
     command:
       - "--config=/app/config.yaml"
       - "--port=4000"
@@ -44,6 +45,7 @@ services:
       - "4000"
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
+      - ./litellm_logging/custom_logger.py:/app/custom_logger.py:ro
     depends_on:
       postgres:
         condition: service_healthy

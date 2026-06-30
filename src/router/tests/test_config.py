@@ -38,16 +38,19 @@ def test_load_route_config_from_yaml_populates_fields(tmp_path):
         tmp_path / "router_config.yaml",
         """
 cache_ttl_seconds: 300
-default_model: deepseek-pro
+default_model: planner
 allowed_models:
-  - fast
-  - deepseek-pro
+  - explorer
+  - planner
 fallbacks:
-  fast:
-    - deepseek-pro
+  explorer:
+    - planner
 timeouts:
-  fast: 30
-  deepseek-pro: 60
+  explorer: 30
+  planner: 120
+provider_models:
+  explorer: ollama_chat/deepseek-v4-flash
+  planner: openai/glm-5.2
 """,
     )
 
@@ -55,10 +58,14 @@ timeouts:
 
     assert isinstance(config, RouteConfig)
     assert config.cache_ttl_seconds == 300
-    assert config.default_model == "deepseek-pro"
-    assert config.allowed_models == {"fast", "deepseek-pro"}
-    assert config.fallbacks == {"fast": ["deepseek-pro"]}
-    assert config.timeouts == {"fast": 30, "deepseek-pro": 60}
+    assert config.default_model == "planner"
+    assert config.allowed_models == {"explorer", "planner"}
+    assert config.fallbacks == {"explorer": ["planner"]}
+    assert config.timeouts == {"explorer": 30, "planner": 120}
+    assert config.provider_models == {
+        "explorer": "ollama_chat/deepseek-v4-flash",
+        "planner": "openai/glm-5.2",
+    }
 
 
 def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
@@ -71,7 +78,7 @@ def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
     assert config.allowed_models == set(DEFAULT_ALLOWED_MODELS)
     assert config.fallbacks == dict(DEFAULT_FALLBACKS)
     assert config.timeouts == {}
-    assert config.default_model == "fast"
+    assert config.default_model == "coder"
 
 
 def test_load_route_config_respects_env_var(tmp_path, monkeypatch):
@@ -101,16 +108,17 @@ def _good_yaml(tmp_path, extra: str = "") -> Path:
         tmp_path / "router_config.yaml",
         f"""
 cache_ttl_seconds: 600
+default_model: explorer
 allowed_models:
-  - fast
-  - deepseek-pro
-  - opencodego-code
+  - explorer
+  - planner
+  - planner-ocg
 fallbacks:
-  fast:
-    - deepseek-pro
-  deepseek-pro:
-    - opencodego-code
-    - fast
+  explorer:
+    - planner
+  planner:
+    - planner-ocg
+    - explorer
 {extra}
 """,
     )
@@ -128,11 +136,12 @@ def test_validate_fails_when_fallback_key_not_in_allowed_models(tmp_path):
         tmp_path / "router_config.yaml",
         """
 cache_ttl_seconds: 600
+default_model: explorer
 allowed_models:
-  - fast
+  - explorer
 fallbacks:
   ghost:
-    - fast
+    - explorer
 """,
     )
     config = config_mod.load_route_config(config_path=str(cfg_path))
@@ -148,10 +157,11 @@ def test_validate_fails_when_fallback_target_not_in_allowed_models(tmp_path):
         tmp_path / "router_config.yaml",
         """
 cache_ttl_seconds: 600
+default_model: explorer
 allowed_models:
-  - fast
+  - explorer
 fallbacks:
-  fast:
+  explorer:
     - unknown-model
 """,
     )
@@ -170,9 +180,9 @@ def test_validate_fails_when_default_model_not_in_allowed_models(tmp_path):
 cache_ttl_seconds: 600
 default_model: expensive
 allowed_models:
-  - fast
+  - explorer
 fallbacks:
-  fast: []
+  explorer: []
 """,
     )
     config = config_mod.load_route_config(config_path=str(cfg_path))
@@ -193,7 +203,7 @@ def test_cross_check_ok_when_allowed_models_in_litellm(tmp_path):
     config = config_mod.load_route_config(config_path=str(cfg_path))
     litellm_path = _write_litellm(
         tmp_path / "litellm.config.yaml",
-        ["fast", "deepseek-pro", "opencodego-code"],
+        ["explorer", "planner", "planner-ocg"],
     )
 
     config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))
@@ -204,13 +214,13 @@ def test_cross_check_fails_when_allowed_alias_missing_from_litellm(tmp_path):
     config = config_mod.load_route_config(config_path=str(cfg_path))
     litellm_path = _write_litellm(
         tmp_path / "litellm.config.yaml",
-        ["fast", "deepseek-pro"],  # missing opencodego-code
+        ["explorer", "planner"],  # missing planner-ocg
     )
 
     with pytest.raises(config_mod.ConfigValidationError) as exc:
         config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))
 
-    assert "opencodego-code" in str(exc.value)
+    assert "planner-ocg" in str(exc.value)
 
 
 def test_cross_check_warns_but_does_not_crash_when_litellm_missing(tmp_path, caplog):

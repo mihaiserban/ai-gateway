@@ -1,21 +1,58 @@
 # Generated from src/gateway.config.yaml. Do not edit directly.
 
 model_list:
-- model_name: fast
+- model_name: explorer
+  litellm_params:
+    model: ollama_chat/deepseek-v4-flash
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: explorer-ds
   litellm_params:
     model: deepseek/deepseek-v4-flash
     api_key: os.environ/DEEPSEEK_API_KEY
   model_info:
     input_cost_per_token: 1.4e-07
     output_cost_per_token: 2.8e-07
-- model_name: deepseek-pro
+- model_name: explorer-ocg
   litellm_params:
-    model: deepseek/deepseek-v4-pro
-    api_key: os.environ/DEEPSEEK_API_KEY
+    model: openai/deepseek-v4-flash
+    api_key: os.environ/OPENCODE_GO_API_KEY
+    api_base: os.environ/OPENCODE_GO_API_BASE
+    additional_drop_params:
+    - reasoningSummary
   model_info:
-    input_cost_per_token: 2.8e-07
-    output_cost_per_token: 5.6e-07
-- model_name: opencodego-fast
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: planner
+  litellm_params:
+    model: ollama_chat/glm-5.2
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: planner-ocg
+  litellm_params:
+    model: openai/glm-5.2
+    api_key: os.environ/OPENCODE_GO_API_KEY
+    api_base: os.environ/OPENCODE_GO_API_BASE
+    additional_drop_params:
+    - reasoningSummary
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: coder
+  litellm_params:
+    model: ollama_chat/kimi-k2.7-code
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: coder-ocg
   litellm_params:
     model: openai/kimi-k2.7-code
     api_key: os.environ/OPENCODE_GO_API_KEY
@@ -25,9 +62,48 @@ model_list:
   model_info:
     input_cost_per_token: 0.0
     output_cost_per_token: 0.0
-- model_name: opencodego-code
+- model_name: coder-dsp
   litellm_params:
-    model: openai/deepseek-v4-pro
+    model: ollama_chat/deepseek-v4-pro
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: coder-dsp-ds
+  litellm_params:
+    model: deepseek/deepseek-v4-pro
+    api_key: os.environ/DEEPSEEK_API_KEY
+  model_info:
+    input_cost_per_token: 2.8e-07
+    output_cost_per_token: 5.6e-07
+- model_name: coder-fast
+  litellm_params:
+    model: ollama_chat/deepseek-v4-flash
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: coder-fast-k26
+  litellm_params:
+    model: ollama_chat/kimi-k2.6
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: vision
+  litellm_params:
+    model: ollama_chat/kimi-k2.6
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
+  model_info:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+- model_name: vision-ocg
+  litellm_params:
+    model: openai/kimi-k2.6
     api_key: os.environ/OPENCODE_GO_API_KEY
     api_base: os.environ/OPENCODE_GO_API_BASE
     additional_drop_params:
@@ -35,37 +111,49 @@ model_list:
   model_info:
     input_cost_per_token: 0.0
     output_cost_per_token: 0.0
-- model_name: ollama-cloud
-  litellm_params:
-    model: ollama_chat/gemma3:27b
-    api_key: os.environ/OLLAMA_API_KEY
-    api_base: os.environ/OLLAMA_API_BASE
-  model_info:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
 litellm_settings:
   drop_params: true
   request_timeout: 120
-  num_retries: 1
+  num_retries: 3
   cache: true
   cache_params:
     type: redis
     redis_url: os.environ/REDIS_URL
+  callbacks:
+  - custom_logger.ProviderModelLogger
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL
 router_settings:
   fallbacks:
-  - fast:
-    - ollama-cloud
-  - deepseek-pro:
-    - opencodego-code
-    - fast
-  - opencodego-fast:
-    - fast
-    - deepseek-pro
-  - opencodego-code:
-    - deepseek-pro
-    - fast
-  - ollama-cloud:
-    - fast
+  - explorer:
+    - explorer-ds
+    - explorer-ocg
+  - explorer-ds:
+    - explorer-ocg
+  - explorer-ocg: []
+  - planner:
+    - planner-ocg
+    - coder
+  - planner-ocg:
+    - coder
+  - coder:
+    - coder-ocg
+    - coder-dsp
+    - coder-dsp-ds
+  - coder-ocg:
+    - coder-dsp
+    - coder-dsp-ds
+  - coder-dsp:
+    - coder-dsp-ds
+  - coder-dsp-ds: []
+  - coder-fast:
+    - coder-fast-k26
+    - coder
+  - coder-fast-k26:
+    - coder
+  - vision:
+    - vision-ocg
+    - coder
+  - vision-ocg:
+    - coder

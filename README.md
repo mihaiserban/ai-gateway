@@ -87,6 +87,7 @@ Successful chat responses include gateway routing headers:
 | Header | Meaning |
 | --- | --- |
 | `X-Gateway-Model` | Alias actually served by LiteLLM after fallback, if any. |
+| `X-Gateway-Provider-Model` | Resolved provider/model string (e.g. `openai/kimi-k2.7-code`). |
 | `X-Gateway-Reason` | `explicit-model`, `warm-session`, or `default-model`. |
 | `X-Gateway-Fallback-Count` | Number of router fallback hops. |
 | `X-Gateway-Fallback-From` | Original selected alias, present only after fallback. |

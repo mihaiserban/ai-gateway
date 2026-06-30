@@ -36,13 +36,14 @@ def load_route_config(config_path: str | None = None) -> RouteConfig:
 
 def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     cache_ttl = int(data.get("cache_ttl_seconds", 600))
-    default_model = str(data.get("default_model", "fast"))
+    default_model = str(data.get("default_model", RouteConfig.default_model))
     allowed = set(data.get("allowed_models") or DEFAULT_ALLOWED_MODELS)
     fallbacks = dict(data.get("fallbacks") or DEFAULT_FALLBACKS)
     timeouts = dict(data.get("timeouts") or {})
     retry_base_delay = float(data.get("retry_base_delay", 0.2))
     retry_max_delay = float(data.get("retry_max_delay", 2.0))
     cache_key_aliases = list(data.get("cache_key_aliases") or [])
+    provider_models = dict(data.get("provider_models") or {})
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
@@ -53,6 +54,7 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         retry_base_delay=retry_base_delay,
         retry_max_delay=retry_max_delay,
         cache_key_aliases=cache_key_aliases,
+        provider_models=provider_models,
     )
 
 

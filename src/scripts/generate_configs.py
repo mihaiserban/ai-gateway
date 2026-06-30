@@ -39,6 +39,7 @@ def render_router_config(config: dict[str, Any]) -> dict[str, Any]:
         "fallbacks": {model["name"]: list(model.get("fallbacks") or []) for model in models},
         "timeouts": {model["name"]: model.get("timeout", 120) for model in models},
         "cache_key_aliases": list(router.get("cache_key_aliases") or []),
+        "provider_models": {model["name"]: model["litellm_model"] for model in models},
     }
 
 
@@ -47,20 +48,26 @@ def render_litellm_config(config: dict[str, Any]) -> dict[str, Any]:
     settings = _mapping(litellm, "settings")
     cache = _mapping(litellm, "cache")
     general = _mapping(litellm, "general")
+    logging = _mapping(litellm, "logging")
     models = _models(config)
+
+    litellm_settings = {
+        "drop_params": settings.get("drop_params", True),
+        "request_timeout": settings.get("request_timeout", 120),
+        "num_retries": settings.get("num_retries", 1),
+        "cache": True,
+        "cache_params": {
+            "type": cache.get("type", "redis"),
+            "redis_url": _env_ref(cache.get("redis_url_env", "REDIS_URL")),
+        },
+    }
+    callbacks = list(logging.get("callbacks") or [])
+    if callbacks:
+        litellm_settings["callbacks"] = callbacks
 
     return {
         "model_list": [_render_model(model) for model in models],
-        "litellm_settings": {
-            "drop_params": settings.get("drop_params", True),
-            "request_timeout": settings.get("request_timeout", 120),
-            "num_retries": settings.get("num_retries", 1),
-            "cache": True,
-            "cache_params": {
-                "type": cache.get("type", "redis"),
-                "redis_url": _env_ref(cache.get("redis_url_env", "REDIS_URL")),
-            },
-        },
+        "litellm_settings": litellm_settings,
         "general_settings": {
             "master_key": _env_ref(general.get("master_key_env", "LITELLM_MASTER_KEY")),
             "database_url": _env_ref(general.get("database_url_env", "DATABASE_URL")),
