@@ -44,6 +44,7 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     retry_max_delay = float(data.get("retry_max_delay", 2.0))
     cache_key_aliases = list(data.get("cache_key_aliases") or [])
     provider_models = dict(data.get("provider_models") or {})
+    model_prices = _model_prices(data.get("model_prices") or {})
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
@@ -55,7 +56,23 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         retry_max_delay=retry_max_delay,
         cache_key_aliases=cache_key_aliases,
         provider_models=provider_models,
+        model_prices=model_prices,
     )
+
+
+def _model_prices(raw: Any) -> dict[str, tuple[float, float]]:
+    if not isinstance(raw, dict):
+        return {}
+    prices: dict[str, tuple[float, float]] = {}
+    for alias, value in raw.items():
+        if not isinstance(alias, str) or not isinstance(value, dict):
+            continue
+        input_cost = value.get("input_cost_per_token")
+        output_cost = value.get("output_cost_per_token")
+        if input_cost is None or output_cost is None:
+            continue
+        prices[alias] = (float(input_cost), float(output_cost))
+    return prices
 
 
 def validate_route_config(config: RouteConfig) -> None:

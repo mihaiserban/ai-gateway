@@ -55,6 +55,7 @@ class RouteConfig:
     retry_max_delay: float = 2.0
     cache_key_aliases: list[str] = field(default_factory=list)
     provider_models: dict[str, str] = field(default_factory=dict)
+    model_prices: dict[str, tuple[float, float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

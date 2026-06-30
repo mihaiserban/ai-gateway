@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from router import config as config_mod
+from router.config import load_route_config
 from router.routing import DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS, RouteConfig
 
 # ---------------------------------------------------------------------------
@@ -124,8 +125,30 @@ fallbacks:
     )
 
 
+def test_load_route_config_reads_model_prices(tmp_path):
+    path = tmp_path / "router_config.yaml"
+    path.write_text(
+        """
+cache_ttl_seconds: 600
+default_model: coder
+allowed_models:
+  - coder
+fallbacks:
+  coder: []
+model_prices:
+  coder:
+    input_cost_per_token: 0.25
+    output_cost_per_token: 0.75
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = load_route_config(str(path))
+
+    assert config.model_prices == {"coder": (0.25, 0.75)}
+
+
 def test_validate_ok_for_consistent_config(tmp_path):
-    cfg_path = _good_yaml(tmp_path)
     config = config_mod.load_route_config(config_path=str(cfg_path))
     # Should not raise.
     config_mod.validate_route_config(config)

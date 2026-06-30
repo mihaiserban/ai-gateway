@@ -142,8 +142,38 @@ def test_alias_entries_render_to_router_and_litellm_configs():
     assert coder_entry["model_info"] == {"mode": "role", "reasoning_level": "high"}
 
 
+def test_render_router_config_includes_resolved_model_prices():
+    config = {
+        "models": [
+            {
+                "name": "paid-provider",
+                "litellm_model": "deepseek/example",
+                "api_key_env": "DEEPSEEK_API_KEY",
+                "model_info": {
+                    "input_cost_per_token": 0.25,
+                    "output_cost_per_token": 0.75,
+                    "reasoning_level": "medium",
+                },
+            }
+        ],
+        "aliases": [{"name": "coder", "target": "paid-provider"}],
+    }
+
+    rendered = render_router_config(config)
+
+    assert rendered["model_prices"] == {
+        "paid-provider": {
+            "input_cost_per_token": 0.25,
+            "output_cost_per_token": 0.75,
+        },
+        "coder": {
+            "input_cost_per_token": 0.25,
+            "output_cost_per_token": 0.75,
+        },
+    }
+
+
 def test_validation_rejects_unknown_fallback_target(tmp_path):
-    config_path = tmp_path / "gateway.config.yaml"
     config_path.write_text(
         """
 router:

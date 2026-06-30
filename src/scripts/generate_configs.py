@@ -44,6 +44,23 @@ def render_router_config(config: dict[str, Any]) -> dict[str, Any]:
             entry["name"]: _resolve_entry(entry, entries_by_name)["litellm_model"]
             for entry in entries
         },
+        "model_prices": {
+            entry["name"]: price
+            for entry in entries
+            if (price := _price_info(_resolve_entry(entry, entries_by_name))) is not None
+        },
+    }
+
+
+def _price_info(entry: dict[str, Any]) -> dict[str, float] | None:
+    model_info = entry.get("model_info") or {}
+    input_cost = model_info.get("input_cost_per_token")
+    output_cost = model_info.get("output_cost_per_token")
+    if input_cost is None or output_cost is None:
+        return None
+    return {
+        "input_cost_per_token": float(input_cost),
+        "output_cost_per_token": float(output_cost),
     }
 
 

@@ -113,3 +113,67 @@ provider_models:
   coder: ollama_chat/kimi-k2.7-code
   coder-fast: ollama_chat/deepseek-v4-flash
   vision: ollama_chat/kimi-k2.6
+model_prices:
+  deepseek-v4-flash-ollama:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  deepseek-v4-flash-deepseek:
+    input_cost_per_token: 1.4e-07
+    output_cost_per_token: 2.8e-07
+  deepseek-v4-flash-opencodego:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  glm-5.2-ollama:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  glm-5.2-opencodego:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  kimi-k2.7-code-ollama:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  kimi-k2.7-code-opencodego:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  deepseek-v4-pro-ollama:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  deepseek-v4-pro-deepseek:
+    input_cost_per_token: 2.8e-07
+    output_cost_per_token: 5.6e-07
+  kimi-k2.6-ollama:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  kimi-k2.6-opencodego:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  deepseek-v4-flash:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  glm-5.2:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  kimi-k2.7-code:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  deepseek-v4-pro:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  kimi-k2.6:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  explorer:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  planner:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  coder:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  coder-fast:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+  vision:
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
