@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from router.config import load_and_validate
+from router.health import all_ready, gather_health
 from router.redaction import redact_payload
 from router.routing import choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
@@ -22,6 +23,7 @@ def create_app(
     *,
     litellm_base_url: str | None = None,
     redis_url: str | None = None,
+    database_url: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     config_path: str | None = None,
     litellm_config_path: str | None = None,
@@ -29,6 +31,7 @@ def create_app(
     app = FastAPI(title="Personal AI Gateway Router")
     app.state.litellm_base_url = (litellm_base_url or os.environ.get("LITELLM_BASE_URL") or "http://litellm:4000").rstrip("/")
     app.state.redis_url = redis_url if redis_url is not None else os.environ.get("REDIS_URL")
+    app.state.database_url = database_url if database_url is not None else os.environ.get("DATABASE_URL")
     app.state.transport = transport
     app.state.route_config = load_and_validate(
         config_path=config_path,
@@ -37,8 +40,18 @@ def create_app(
     app.state.session_store = _session_store(app.state.redis_url)
 
     @app.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"router": "ok"}
+    async def healthz() -> JSONResponse:
+        statuses = await gather_health(app.state)
+        return JSONResponse(status_code=200, content=statuses)
+
+    @app.get("/readyz")
+    async def readyz() -> JSONResponse:
+        statuses = await gather_health(app.state)
+        if all_ready(statuses):
+            statuses["status"] = "ready"
+            return JSONResponse(status_code=200, content=statuses)
+        statuses["status"] = "not ready"
+        return JSONResponse(status_code=503, content=statuses)
 
     @app.get("/v1/models")
     async def models(request: Request) -> Response:
