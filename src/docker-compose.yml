@@ -17,7 +17,7 @@ services:
       - "4100:4100"
     depends_on:
       litellm:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -44,9 +44,12 @@ services:
       STORE_MODEL_IN_DB: "True"
       REDIS_URL: ${REDIS_URL}
       PYTHONPATH: /app
+    entrypoint: ["sh", "-c"]
     command:
-      - "--config=/app/config.yaml"
-      - "--port=4000"
+      - |
+        echo "Waiting for Postgres and Redis to be fully ready..."
+        sleep 10
+        exec /app/docker/prod_entrypoint.sh --config=/app/config.yaml --port=4000
     expose:
       - "4000"
     volumes:
@@ -64,7 +67,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     deploy:
       resources:
         limits:
