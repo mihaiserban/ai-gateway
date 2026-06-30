@@ -167,50 +167,90 @@ DASHBOARD_HTML = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Gateway Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; background: #f6f7f9; color: #18202a; }
+    :root {
+      --canvas: #1f1633;
+      --night: #150f23;
+      --panel: #150f23;
+      --ink: #ffffff;
+      --ink-muted: rgba(255,255,255,0.72);
+      --ink-faint: rgba(255,255,255,0.18);
+      --hairline: #362d59;
+      --hairline-strong: rgba(255,255,255,0.14);
+      --lime: #c2ef4e;
+      --pink: #fa7faa;
+      --violet: #6a5fc1;
+      --violet-deep: #422082;
+      --violet-mid: #79628c;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 18px;
+      color-scheme: dark;
+      font-family: Rubik, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); line-height: 1.5; }
     main { max-width: 1180px; margin: 0 auto; padding: 24px; }
-    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 20px; }
-    h1 { margin: 0; font-size: 28px; }
-    h2 { font-size: 16px; margin: 0 0 12px; }
-    button { border: 1px solid #b8c0cc; background: white; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
-    button[aria-pressed="true"] { background: #17202a; color: white; border-color: #17202a; }
-    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
-    .panel { background: white; border: 1px solid #dfe3e8; border-radius: 8px; padding: 14px; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+    .brand { display: flex; align-items: baseline; gap: 12px; }
+    h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0; }
+    .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.25px; text-transform: uppercase; color: var(--ink-muted); }
+    .status-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 700; letter-spacing: 0.2px; text-transform: uppercase; background: var(--lime); color: var(--night); }
+    .status-chip.warn { background: var(--pink); color: var(--night); }
+    .status-chip.mute { background: var(--violet-mid); color: var(--ink); }
+    .window { background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 16px; }
+    h2 { font-size: 12px; font-weight: 700; letter-spacing: 0.2px; text-transform: uppercase; color: var(--ink-muted); margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
     .span-3 { grid-column: span 3; }
     .span-6 { grid-column: span 6; }
-    .metric { font-size: 30px; font-weight: 700; }
-    .muted { color: #5d6875; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border-bottom: 1px solid #e8ebef; padding: 8px; text-align: left; }
-    .bar { height: 8px; border-radius: 999px; background: #dbe7ff; overflow: hidden; }
-    .bar > span { display: block; height: 100%; background: #2563eb; }
-    @media (max-width: 800px) { .span-3, .span-4, .span-6, .span-8 { grid-column: span 12; } header { align-items: flex-start; flex-direction: column; } }
+    .metric { font-size: 30px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+    .metric.small { font-size: 14px; font-weight: 500; color: var(--ink-muted); line-height: 1.4; }
+    .muted { color: var(--ink-muted); font-size: 13px; }
+    .topbar { display: flex; gap: 8px; }
+    button { border: 1px solid var(--hairline); background: transparent; border-radius: var(--radius-md); padding: 8px 14px; cursor: pointer; color: var(--ink-muted); font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.2px; text-transform: uppercase; }
+    button[aria-pressed="true"] { background: var(--ink); color: var(--night); border-color: var(--ink); }
+    button:hover { border-color: var(--ink-muted); color: var(--ink); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid var(--hairline); padding: 8px; text-align: left; }
+    th { font-size: 11px; font-weight: 600; letter-spacing: 0.25px; text-transform: uppercase; color: var(--ink-muted); }
+    td { color: var(--ink); }
+    td.mono, .mono { font-family: Monaco, Menlo, "Ubuntu Mono", monospace; font-size: 13px; }
+    .bar { height: 8px; border-radius: 999px; background: var(--violet-deep); overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: var(--lime); }
+    .badge { display: inline-block; padding: 2px 6px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; letter-spacing: 0.25px; text-transform: uppercase; background: var(--violet-mid); color: var(--ink); }
+    .badge.error { background: rgba(250,127,170,0.18); color: var(--pink); }
+    .badge.ok { background: rgba(194,239,78,0.18); color: var(--lime); }
+    @media (max-width: 900px) { .span-3, .span-6 { grid-column: span 12; } header { align-items: flex-start; flex-direction: column; } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
   </style>
 </head>
 <body>
   <main>
     <header>
-      <div>
+      <div class="brand">
         <h1>AI Gateway</h1>
-        <div id="updated" class="muted">Loading...</div>
+        <span id="readiness-chip" class="status-chip mute">checking</span>
       </div>
-      <div>
+      <div class="topbar">
         <button data-days="1">24h</button>
         <button data-days="7">7d</button>
         <button data-days="30" aria-pressed="true">30d</button>
       </div>
     </header>
-    <section class="grid">
-      <div class="panel span-3"><h2>Readiness</h2><div id="readiness" class="metric">-</div></div>
-      <div class="panel span-3"><h2>Requests</h2><div id="requests" class="metric">-</div></div>
-      <div class="panel span-3"><h2>Tokens</h2><div id="tokens" class="metric">-</div></div>
-      <div class="panel span-3"><h2>Est. Spend</h2><div id="spend" class="metric">-</div></div>
-      <div class="panel span-6"><h2>Top Models</h2><div id="models"></div></div>
-      <div class="panel span-6"><h2>Daily Usage</h2><div id="daily"></div></div>
-      <div class="panel span-6"><h2>Provider Availability</h2><div id="availability"></div></div>
-      <div class="panel span-6"><h2>Recent Failures</h2><div id="failures"></div></div>
+    <div class="eyebrow" id="updated">Loading...</div>
+    <section class="grid" style="margin-top: 20px;">
+      <div class="window span-3"><h2>Readiness</h2><div id="readiness" class="metric">-</div><div id="health-summary" class="metric small" style="margin-top: 8px;"></div></div>
+      <div class="window span-3"><h2>Requests</h2><div id="requests" class="metric">-</div></div>
+      <div class="window span-3"><h2>Tokens</h2><div id="tokens" class="metric">-</div></div>
+      <div class="window span-3"><h2>Est. Spend</h2><div id="spend" class="metric">-</div></div>
+      <div class="window span-6"><h2>Top Models</h2><div id="models"></div></div>
+      <div class="window span-6"><h2>Daily Usage</h2><div id="daily"></div></div>
+      <div class="window span-6"><h2>Provider Availability</h2><div id="availability"></div></div>
+      <div class="window span-6"><h2>Recent Failures</h2><div id="failures"></div></div>
     </section>
   </main>
   <script>
@@ -235,8 +275,14 @@ DASHBOARD_HTML = """<!doctype html>
     }
 
     function render(live, usage) {
+      const status = live.readiness.status || "unknown";
+      const chip = document.getElementById("readiness-chip");
+      chip.textContent = status;
+      chip.className = "status-chip " + (status === "ready" ? "" : status === "not ready" ? "warn" : "mute");
       document.getElementById("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
-      document.getElementById("readiness").textContent = live.readiness.status;
+      document.getElementById("readiness").textContent = status;
+      const degraded = Object.entries(live.health).filter(([k, v]) => k !== "status" && k !== "router" && v !== "ok" && v !== "disabled");
+      document.getElementById("health-summary").textContent = degraded.map(([k, v]) => `${k}: ${v}`).join(" / ") || "all systems ok";
       document.getElementById("requests").textContent = fmt.format(usage.totals.requests || live.metrics.requests_total || 0);
       document.getElementById("tokens").textContent = fmt.format(usage.totals.total_tokens || 0);
       document.getElementById("spend").textContent = usd.format(usage.totals.estimated_cost_usd || 0);
@@ -249,7 +295,7 @@ DASHBOARD_HTML = """<!doctype html>
     function renderModels(rows) {
       const max = Math.max(1, ...rows.map((row) => row.total_tokens || 0));
       document.getElementById("models").innerHTML = table(["Model", "Requests", "Tokens", "Spend"], rows.map((row) => [
-        row.served_model,
+        `<span class="mono">${escapeHtml(row.served_model)}</span>`,
         fmt.format(row.requests || 0),
         `${fmt.format(row.total_tokens || 0)}<div class="bar"><span style="width:${Math.round(((row.total_tokens || 0) / max) * 100)}%"></span></div>`,
         usd.format(row.estimated_cost_usd || 0),
@@ -259,7 +305,7 @@ DASHBOARD_HTML = """<!doctype html>
     function renderDaily(rows) {
       const max = Math.max(1, ...rows.map((row) => row.total_tokens || 0));
       document.getElementById("daily").innerHTML = table(["Day", "Requests", "Tokens"], rows.map((row) => [
-        row.day,
+        `<span class="mono">${escapeHtml(row.day)}</span>`,
         fmt.format(row.requests || 0),
         `${fmt.format(row.total_tokens || 0)}<div class="bar"><span style="width:${Math.round(((row.total_tokens || 0) / max) * 100)}%"></span></div>`,
       ]));
@@ -267,18 +313,18 @@ DASHBOARD_HTML = """<!doctype html>
 
     function renderAvailability(map) {
       const rows = Object.entries(map).map(([model, value]) => [
-        model,
+        `<span class="mono">${escapeHtml(model)}</span>`,
         fmt.format(value.attempts || 0),
-        `${value.availability_percent || 0}%`,
+        badge(`${value.availability_percent || 0}%`, (value.availability_percent || 0) >= 90 ? "ok" : (value.availability_percent || 0) >= 50 ? "" : "error"),
       ]);
       document.getElementById("availability").innerHTML = table(["Model", "Attempts", "Availability"], rows);
     }
 
     function renderFailures(rows) {
       document.getElementById("failures").innerHTML = table(["Model", "Status", "Error", "Fallbacks"], rows.map((row) => [
-        row.served_model,
-        row.status,
-        row.error_class || "",
+        `<span class="mono">${escapeHtml(row.served_model)}</span>`,
+        `<span class="mono">${badge(escapeHtml(row.status), /^2/.test(row.status) ? "ok" : "error")}</span>`,
+        `<span class="mono">${escapeHtml(row.error_class || "-")}</span>`,
         fmt.format(row.fallback_count || 0),
       ]));
     }
@@ -286,6 +332,14 @@ DASHBOARD_HTML = """<!doctype html>
     function table(headers, rows) {
       if (!rows.length) return '<div class="muted">No data yet.</div>';
       return `<table><thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    }
+
+    function badge(text, kind) {
+      return `<span class="badge ${kind}">${text}</span>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
     }
 
     refresh();
