@@ -225,6 +225,7 @@ runtime config files:
 
 ```bash
 python3 src/scripts/generate_configs.py
+python3 src/scripts/generate_opencode_config.py
 ```
 
 `src/gateway.config.yaml` controls provider model IDs, API base env names,
@@ -236,6 +237,12 @@ for the Docker stack, but they are not the human edit point.
 
 The router validates that configured fallback aliases are allowed and that
 allowed aliases exist in the LiteLLM model list.
+
+If you use OpenCode with this gateway, run `generate_opencode_config.py` to sync
+the `provider.gateway.models` block in `~/.config/opencode/opencode.json` from
+the gateway catalog. It preserves any manually added per-model options while
+adding new aliases and updating generated display names. Use `--dry-run` to
+preview the merged model list without writing the file.
 
 ## Deploy With Docker Compose
 

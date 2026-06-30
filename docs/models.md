@@ -204,9 +204,17 @@ vision
 | --- | --- | --- |
 | `OLLAMA_API_BASE` | All `ollama_chat/*` aliases | Ollama endpoint URL |
 | `OLLAMA_API_KEY` | All `ollama_chat/*` aliases | Ollama API key (may be empty for local) |
-| `DEEPSEEK_API_KEY` | `explorer-ds`, `coder-dsp-ds` | DeepSeek API key |
+| `DEEPSEEK_API_KEY` | `deepseek-v4-flash-deepseek`, `deepseek-v4-pro-deepseek` | DeepSeek API key |
 | `OPENCODE_GO_API_BASE` | All `openai/*` aliases | OpenCode Go base URL |
 | `OPENCODE_GO_API_KEY` | All `openai/*` aliases | OpenCode Go API key |
+
+## OpenCode integration
+
+Run `python3 src/scripts/generate_opencode_config.py` to update the
+`provider.gateway.models` block in `~/.config/opencode/opencode.json` from the
+current gateway catalog. The generator preserves manually added per-model options
+while adding new aliases and refreshing generated display names. Use
+`--dry-run` to preview without writing.
 
 ## Updating this page
 
