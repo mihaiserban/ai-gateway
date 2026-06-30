@@ -138,16 +138,19 @@ def create_app(
             else:
                 last_response = response
                 last_exception = None
+                if is_stream and not _is_success(response):
+                    await response.aread()
+                should_fallback = _should_fallback_response(response)
                 app.state.metrics.record_provider_attempt(
                     current_model,
                     response.status_code,
                     success=_is_success(response),
-                    retryable_failure=_is_retryable_status(response.status_code),
+                    retryable_failure=should_fallback,
                     provider_model=_provider_model(current_model),
                 )
                 if _is_success(response):
                     break
-                if not _is_retryable_status(response.status_code):
+                if not should_fallback:
                     break
                 if is_stream:
                     client = getattr(response, "_stream_client", None)
@@ -335,8 +338,70 @@ def _log_request(
     logger.info(" ".join(parts))
 
 
-def _is_retryable_status(status_code: int) -> bool:
-    return status_code in {429, 500, 502, 503, 504}
+def _should_fallback_response(response: httpx.Response) -> bool:
+    status_code = response.status_code
+    if status_code in {500, 502, 503, 504}:
+        return True
+
+    message = _error_text(response)
+    if _has_any(message, CALLER_LIMIT_ERROR_MARKERS):
+        return False
+
+    if status_code in {402, 429}:
+        return True
+    if status_code == 403:
+        return _has_any(message, PROVIDER_ACCESS_ERROR_MARKERS)
+    if status_code == 404:
+        return _has_any(message, PROVIDER_MODEL_ERROR_MARKERS)
+    if status_code == 400:
+        return _has_any(message, PROVIDER_REQUEST_ERROR_MARKERS)
+    return False
+
+
+CALLER_LIMIT_ERROR_MARKERS = (
+    "virtual key",
+    "allowed models",
+    "not allowed to access",
+)
+
+PROVIDER_ACCESS_ERROR_MARKERS = (
+    "subscription",
+    "entitlement",
+    "does not include",
+    "do not have access",
+    "don't have access",
+    "region",
+    "not enabled",
+)
+
+PROVIDER_MODEL_ERROR_MARKERS = (
+    "model",
+    "deployment",
+    "deprecated",
+)
+
+PROVIDER_REQUEST_ERROR_MARKERS = (
+    "context length",
+    "maximum context",
+    "too many tokens",
+    "unsupported parameter",
+    "unsupported param",
+    "unsupported tool",
+    "tools not supported",
+    "functions not supported",
+)
+
+
+def _error_text(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except Exception:
+        return response.text.lower()
+    return json.dumps(payload, sort_keys=True).lower()
+
+
+def _has_any(value: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in value for marker in markers)
 
 
 def _exception_status(exc: Exception) -> str:

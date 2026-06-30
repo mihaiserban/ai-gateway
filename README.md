@@ -169,6 +169,12 @@ Routing is deterministic and config-driven:
 3. Otherwise, the router uses the configured `default_model`.
 4. Retryable upstream failures can move through the configured fallback chain.
 
+Fallbacks trigger for provider-side capacity, quota, billing, entitlement,
+missing-model, context-limit, and unsupported-parameter errors. Caller-side
+auth, virtual-key budget, virtual-key model allowlist, and malformed request
+errors do not fallback because that would route around the caller's access
+controls or repeat an invalid request.
+
 Default public aliases:
 
 | Alias level | Examples | Intended use |

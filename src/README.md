@@ -307,6 +307,11 @@ The router chooses aliases with deterministic rules:
 - warm `X-Session-Id` keeps the previous model until the Redis TTL expires
 - otherwise, the configured `default_model` is used
 
+Fallbacks trigger for provider-side capacity, quota, billing, entitlement,
+missing-model, context-limit, and unsupported-parameter errors. Caller-side
+auth, virtual-key budget, virtual-key model allowlist, and malformed request
+errors do not fallback.
+
 Default session TTL is 600 seconds. See [docs/redis.md](../docs/redis.md) for
 full Redis architecture and cache behavior.
 

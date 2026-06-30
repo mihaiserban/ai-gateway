@@ -338,6 +338,94 @@ async def test_chat_does_not_retry_on_client_error(simple_route_config_path: str
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "payload"),
+    [
+        (402, {"error": {"message": "billing hard limit reached"}}),
+        (403, {"error": {"message": "subscription does not include this model"}}),
+        (404, {"error": {"message": "model has been deprecated"}}),
+        (400, {"error": {"message": "context length exceeded"}}),
+        (400, {"error": {"message": "unsupported parameter: tools"}}),
+    ],
+)
+async def test_chat_falls_back_on_provider_route_errors(
+    simple_route_config_path: str,
+    status_code: int,
+    payload: dict,
+):
+    seen_models = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen_models.append(model)
+        if model == "coder":
+            return httpx.Response(status_code, json=payload)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": f"fallback-{status_code}"},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 200
+    assert seen_models == ["coder", "explorer"]
+    assert response.headers["X-Gateway-Model"] == "explorer"
+    assert response.headers["X-Gateway-Fallback-From"] == "coder"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "payload"),
+    [
+        (401, {"error": {"message": "invalid api key"}}),
+        (403, {"error": {"message": "Virtual key is not allowed to access model coder"}}),
+        (429, {"error": {"message": "LiteLLM virtual key budget exceeded"}}),
+        (400, {"error": {"message": "messages must contain at least one item"}}),
+    ],
+)
+async def test_chat_does_not_fallback_on_caller_or_request_errors(
+    simple_route_config_path: str,
+    status_code: int,
+    payload: dict,
+):
+    seen_models = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen_models.append(json.loads(request.content)["model"])
+        return httpx.Response(status_code, json=payload)
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": f"no-fallback-{status_code}"},
+            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == status_code
+    assert seen_models == ["coder"]
+    assert "X-Gateway-Fallback-From" not in response.headers
+    assert response.headers.get("X-Gateway-Fallback-Count") == "0"
+
+
+@pytest.mark.asyncio
 async def test_chat_retries_on_timeout_exception(simple_route_config_path: str):
     seen_models = []
 
