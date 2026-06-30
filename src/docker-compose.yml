@@ -44,12 +44,8 @@ services:
       STORE_MODEL_IN_DB: "True"
       REDIS_URL: ${REDIS_URL}
       PYTHONPATH: /app
-    entrypoint: ["sh", "-c"]
-    command:
-      - |
-        echo "Waiting for Postgres and Redis to be fully ready..."
-        sleep 20
-        exec /app/docker/prod_entrypoint.sh --port=4000
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 'Waiting for Postgres and Redis to be fully ready...' && sleep 20 && exec /app/docker/prod_entrypoint.sh --config=/app/litellm.config.yaml --port=4000"]
     expose:
       - "4000"
     volumes:

@@ -21,6 +21,8 @@ python3 -m ruff format --check .
 python3 -m mypy
 ```
 
+Run the full test/lint suite **once before committing or after significant changes**, not after every minor command. Quick iterations and debugging do not need repeated lint/type-check passes.
+
 The human-edited config is `src/gateway.config.yaml`. After changing it, regenerate runtime YAML:
 
 ```bash
