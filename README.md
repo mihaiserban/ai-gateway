@@ -230,16 +230,14 @@ curl http://localhost:4100/healthz
 curl http://localhost:4100/readyz
 ```
 
-The local agent base URL on the Docker host is:
+The agent base URL is:
 
 ```text
-http://127.0.0.1:4100/v1
+http://<host>:4100/v1
 ```
 
-For remote access, put Tailscale, WireGuard, Cloudflare Tunnel with Access, or
-another authenticated private edge in front of the loopback listener. Do not
-bind port `4100` to all interfaces or expose it directly to the public
-internet.
+For remote access, prefer Tailscale or another private network. Do not expose
+port `4100` directly to the public internet.
 
 ## Create And Use Virtual Keys
 
@@ -273,11 +271,10 @@ Use the returned key as the agent API key.
 
 ## Client Usage
 
-OpenAI-compatible clients on the Docker host should point at the loopback
-router and use a virtual key:
+OpenAI-compatible clients should point at the router and use a virtual key:
 
 ```bash
-export OPENAI_BASE_URL=http://127.0.0.1:4100/v1
+export OPENAI_BASE_URL=http://<host>:4100/v1
 export OPENAI_API_KEY=<litellm-virtual-key>
 ```
 

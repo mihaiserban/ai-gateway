@@ -13,7 +13,7 @@ services:
       REDIS_URL: ${REDIS_URL}
       USAGE_LEDGER_URL: http://usage-ledger:4200
     ports:
-      - "127.0.0.1:4100:4100"
+      - "4100:4100"
     depends_on:
       litellm:
         condition: service_healthy

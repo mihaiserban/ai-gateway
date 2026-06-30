@@ -72,10 +72,10 @@ docker compose logs -f sticky-router litellm
 
 ## Agent Endpoint
 
-The OpenAI-compatible endpoint for agents running on the Docker host is:
+The OpenAI-compatible endpoint for agents is:
 
 ```text
-http://127.0.0.1:4100/v1
+http://<nas-host>:4100/v1
 ```
 
 Health check:
@@ -241,7 +241,7 @@ Point Codex at the gateway with a custom model provider or
 `OPENAI_BASE_URL`:
 
 ```bash
-export OPENAI_BASE_URL=http://127.0.0.1:4100/v1
+export OPENAI_BASE_URL=http://<nas-host>:4100/v1
 export OPENAI_API_KEY=<litellm-virtual-key>
 ```
 
@@ -303,20 +303,15 @@ Do not expose the gateway directly to the public internet.
 
 Preferred access:
 
-- Tailscale or WireGuard on the NAS with a local reverse proxy or tunnel to
-  `127.0.0.1:4100`.
-- Cloudflare Tunnel with Access in front of `http://127.0.0.1:4100`.
+- Tailscale on the NAS, then use `http://<tailscale-ip>:4100/v1`.
+- Cloudflare Tunnel with Access in front of it.
+- WireGuard/VPN to your home network.
 
-The default compose file binds the router to loopback only:
+For local LAN only, use:
 
 ```text
-127.0.0.1:4100:4100
+http://<nas-lan-ip>:4100/v1
 ```
-
-If you deliberately need direct LAN or Tailscale access without a tunnel,
-change the compose binding to a specific trusted interface address and keep a
-host firewall rule in front of it. Do not use `4100:4100` on an internet-facing
-host.
 
 LiteLLM port `4000`, Postgres `5432`, and Redis `6379` are internal Docker
 ports. The LiteLLM admin UI is not exposed by default.
@@ -454,6 +449,18 @@ PY
 Provider API keys (`DEEPSEEK_API_KEY`, `OPENCODE_GO_API_KEY`, `OLLAMA_API_KEY`)
 come from the provider dashboards and must be pasted in manually. The helper
 only generates the internal secrets.
+
+## Tailscale-Only Exposure
+
+The default posture is Tailscale-only. The gateway should never be exposed
+directly to the public internet.
+
+- Install Tailscale on the NAS and join the tailnet.
+- Agents use `http://<tailscale-ip>:4100/v1`.
+- Only port `4100` is published by the router service; `4000`, `5432`, and
+  `6379` stay on the internal Docker network.
+- If you need remote access without Tailscale, use a Cloudflare Tunnel with
+  Access policies in front of it — never a raw port forward.
 
 ## Local Tests
 
