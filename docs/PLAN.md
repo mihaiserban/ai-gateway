@@ -52,22 +52,21 @@ Current account mapping:
 |---|---|---|---|
 | OpenCode Go subscription | Upstream provider | **Required / feasible** | Call `https://opencode.ai/zen/go/v1/chat/completions` with `OPENCODE_GO_API_KEY`; smoke test `/models` first because the model list changes. |
 | Ollama Cloud | Upstream provider | **Required / feasible, verify auth** | Use `OLLAMA_API_KEY` against Ollama's hosted API; verify whether LiteLLM can pass cloud auth cleanly before relying on it in fallback chains. |
-| Copilot Pro | Upstream provider | **Required / experimental** | Use LiteLLM's `github_copilot/` provider and complete the OAuth device flow once; persist the resulting credentials in a Docker volume. If this cannot survive container restart, Copilot is disabled and the build pauses. |
+| Copilot Pro | Upstream provider | **Skipped for now** | Do not configure this in the first implementation. Revisit LiteLLM's `github_copilot/` OAuth device flow later if the token can persist across NAS restarts. |
 | DeepSeek API | Upstream provider | **Required / feasible** | Use `DEEPSEEK_API_KEY` with DeepSeek's OpenAI-compatible API and current V4 model names. |
 | Codex Pro | Gateway client, not upstream provider | **Required / feasible as client only** | Codex can define a custom model provider that points at this gateway and uses a LiteLLM virtual key, or it can use ChatGPT sign-in separately. Codex Pro subscription access is not a general upstream API key for other clients. |
 
 Decision rule:
 
-- **Go:** OpenCode Go, Ollama Cloud, Copilot Pro, and DeepSeek API each pass a
-  one-request smoke test through LiteLLM or the sidecar, and Codex Pro can call
-  the gateway as a client via a custom model provider or `OPENAI_BASE_URL`.
+- **Go:** OpenCode Go, Ollama Cloud, and DeepSeek API each pass a one-request
+  smoke test through LiteLLM or the sidecar, and Codex Pro can call the gateway
+  as a client via a custom model provider or `OPENAI_BASE_URL`.
 - **No-go:** If the requirement is that Codex Pro must be usable as a generic
   upstream provider behind the gateway. OpenAI documents Codex ChatGPT sign-in
   as subscription access for Codex clients, while API-key use is billed through
   the OpenAI Platform at standard API rates.
-- **Pause:** If Copilot Pro cannot persist OAuth credentials across NAS
-  container restarts. Copilot is subscription-shaped and useful, but it is also
-  the most fragile provider in this set.
+- **Later:** Copilot Pro can be added as a separate spike after the core
+  gateway is working.
 
 ## Runtime Decision
 
@@ -145,17 +144,17 @@ config so they can be changed without code edits.
 |---|---|---|---|---|
 | `fast` | `deepseek/deepseek-v4-flash` | `DEEPSEEK_API_KEY` | Default low-cost chat/code draft model | DeepSeek documents `deepseek-chat` and `deepseek-reasoner` as deprecated on 2026-07-24, so do not build new aliases on those names. |
 | `deepseek-pro` | `deepseek/deepseek-v4-pro` | `DEEPSEEK_API_KEY` | Stronger DeepSeek path for coding/reasoning | Also useful as fallback when OpenCode Go quota is exhausted. |
-| `openai-fast` | `openai/<small-model>` | `OPENAI_API_KEY` | Optional OpenAI API baseline | Only enable if there is a separate OpenAI Platform API key. Codex Pro does not satisfy this env var without standard API billing. |
-| `reasoning` | `openai/<reasoning-model>` | `OPENAI_API_KEY` | Optional highest-quality OpenAI escalation | Optional unless a separate OpenAI Platform budget is added. Prefer DeepSeek/OpenCode Go first for this subscription-only build. |
-| `vision` | `openai/<vision-model>` | `OPENAI_API_KEY` | Optional image input and screenshots | Optional unless a separate OpenAI Platform budget is added. |
-| `zai` | `zai/glm-4.7` | `ZAI_API_KEY` | GLM reasoning/coding provider | LiteLLM has a first-class `zai/` provider. Prefer that over pretending Z.AI is Ollama. |
-| `zai-cheap` | `zai/glm-4.5-flash` | `ZAI_API_KEY` | Free/cheap GLM fallback | Good candidate for non-critical requests if quota and latency are acceptable. |
-| `ollama-local` | `ollama_chat/<local-model>` | `OLLAMA_API_BASE` | Local NAS/LAN Ollama | Use `ollama_chat` for chat; set `api_base` to the local Ollama server. |
+| `openai-fast` | `openai/<small-model>` | `OPENAI_API_KEY` | Optional future OpenAI API baseline | Only enable if there is a separate OpenAI Platform API key. Codex Pro does not satisfy this env var without standard API billing. |
+| `reasoning` | `openai/<reasoning-model>` | `OPENAI_API_KEY` | Optional future OpenAI escalation | Optional unless a separate OpenAI Platform budget is added. Prefer DeepSeek/OpenCode Go first for this subscription-only build. |
+| `vision` | `openai/<vision-model>` | `OPENAI_API_KEY` | Optional future image input and screenshots | Optional unless a separate OpenAI Platform budget is added. |
+| `zai` | `zai/glm-4.7` | `ZAI_API_KEY` | Optional future GLM reasoning/coding provider | LiteLLM has a first-class `zai/` provider. Prefer that over pretending Z.AI is Ollama. |
+| `zai-cheap` | `zai/glm-4.5-flash` | `ZAI_API_KEY` | Optional future GLM fallback | Good candidate for non-critical requests if quota and latency are acceptable. |
+| `ollama-local` | `ollama_chat/<local-model>` | `OLLAMA_API_BASE` | Optional future local NAS/LAN Ollama | Use `ollama_chat` for chat; set `api_base` to the local Ollama server. |
 | `ollama-cloud` | `ollama_chat/<cloud-model>` | `OLLAMA_API_BASE`, `OLLAMA_API_KEY` | Ollama cloud models | Ollama documents native cloud API at `https://ollama.com/api`; its OpenAI-compatible local/client endpoint is `/v1`. Verify LiteLLM behavior against cloud auth during implementation. |
 | `opencodego-fast` | `openai/deepseek-v4-flash` + `https://opencode.ai/zen/go/v1` | `OPENCODE_GO_API_KEY` | Cheap OpenCode Go coding model | OpenCode Go documents OpenAI-compatible `/chat/completions` endpoints for this model. |
 | `opencodego-code` | `openai/deepseek-v4-pro` + `https://opencode.ai/zen/go/v1` | `OPENCODE_GO_API_KEY` | Stronger OpenCode Go coding model | Use the OpenAI-compatible subset first; add Anthropic-style Go models later if needed. |
-| `copilot` | `github_copilot/<model>` | persisted OAuth token volume | Experimental Copilot route | LiteLLM documents GitHub Copilot via OAuth device flow, not a normal static API key. Bootstrap manually and persist its credentials. |
-| `github-models` | `github/<model>` | `GITHUB_API_KEY` | Optional GitHub Models API fallback | This is not Copilot, but it is the official GitHub Models inference API and is easier to automate with a PAT. |
+| `copilot` | `github_copilot/<model>` | persisted OAuth token volume | Skipped for first implementation | LiteLLM documents GitHub Copilot via OAuth device flow, not a normal static API key. Bootstrap manually and persist its credentials in a later spike. |
+| `github-models` | `github/<model>` | `GITHUB_API_KEY` | Optional future GitHub Models API fallback | This is not Copilot, but it is the official GitHub Models inference API and is easier to automate with a PAT. |
 
 ### Provider Notes
 
@@ -171,9 +170,9 @@ config so they can be changed without code edits.
   runbook as "Codex can use a custom model provider or `OPENAI_BASE_URL` with
   the gateway URL and a LiteLLM virtual key", not in `litellm.config.yaml` as an
   upstream model.
-- Copilot is the least NAS-friendly provider because the initial OAuth device
-  flow is interactive. Keep it as an optional provider and do not put it in the
-  default fallback path until the token persistence story is verified.
+- Copilot is skipped in the first implementation because the initial OAuth
+  device flow is interactive. Keep it out of the fallback path until the token
+  persistence story is verified.
 - OpenCode clients may send `reasoningSummary`; LiteLLM's OpenCode integration
   docs say to drop it for Chat Completions models. Add
   `additional_drop_params: ["reasoningSummary"]` to aliases used by OpenCode.
@@ -232,14 +231,11 @@ it needs to rewrite the `model` field after a provider-specific failure.
 Initial chains:
 
 ```yaml
-fast: [zai-cheap, openai-fast, ollama-local]
-opencodego-fast: [fast, deepseek-pro, openai-fast]
-opencodego-code: [deepseek-pro, reasoning]
-reasoning: [deepseek-pro, opencodego-code, openai-fast]
-vision: [reasoning]
-zai: [deepseek-pro, openai-fast]
-copilot: [opencodego-code, deepseek-pro]
-ollama-cloud: [ollama-local, fast]
+fast: [ollama-cloud]
+opencodego-fast: [fast, deepseek-pro]
+opencodego-code: [deepseek-pro, fast]
+deepseek-pro: [opencodego-code, fast]
+ollama-cloud: [fast]
 ```
 
 ## Cost And Access Controls
@@ -302,8 +298,7 @@ docs/
 - Record the runtime choice in the README: LiteLLM is the active gateway;
   Portkey is prior art and an optional future spike, not another container in
   the default stack.
-- Add provider aliases for OpenAI, DeepSeek V4, Z.AI, Ollama, OpenCode Go,
-  Copilot, and optional GitHub Models.
+- Add provider aliases for DeepSeek V4, Ollama Cloud, and OpenCode Go.
 - Add `additional_drop_params: ["reasoningSummary"]` to aliases used by
   OpenCode.
 - Smoke test `/v1/models` and one non-streaming `/v1/chat/completions` call per
@@ -340,8 +335,7 @@ docs/
 - OpenCode Go `/v1/models` succeeds with `OPENCODE_GO_API_KEY`.
 - DeepSeek `/models` or one chat completion succeeds with `DEEPSEEK_API_KEY`.
 - Ollama Cloud auth succeeds with `OLLAMA_API_KEY`.
-- LiteLLM Copilot OAuth credentials survive a container restart and one
-  `github_copilot/` chat completion succeeds.
+- Copilot is not part of the first implementation smoke test.
 - Codex CLI can point at `http://<nas>:4100/v1` with a custom model provider or
   `OPENAI_BASE_URL` and a LiteLLM virtual key, or can be documented as a
   separate ChatGPT-authenticated client.
