@@ -4,6 +4,7 @@ import socket
 from urllib.parse import urlparse
 
 import httpx
+import redis.asyncio as redis
 
 
 HEALTH_TIMEOUT = 2.0
@@ -25,8 +26,6 @@ async def check_redis(app_state) -> str:
         return "disabled"
     client = getattr(app_state, "redis_client", None)
     if client is None:
-        import redis.asyncio as redis
-
         client = redis.from_url(redis_url, decode_responses=True)
         app_state.redis_client = client
     try:

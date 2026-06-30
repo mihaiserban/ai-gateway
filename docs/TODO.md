@@ -52,13 +52,13 @@ turn it into a NAS-ready personal v1.
 
 - [ ] Add configurable request timeouts per alias.
 - [ ] Add exponential backoff for router-level retries.
-- [ ] Add `X-Gateway-Fallback-From` and `X-Gateway-Fallback-Count` response
+- [x] Add `X-Gateway-Fallback-From` and `X-Gateway-Fallback-Count` response
       headers.
 - [ ] Log structured request metadata: session id hash, selected model, routing
       reason, status, latency, and fallback count.
-- [ ] Add LiteLLM and Redis checks to `/healthz`.
-- [ ] Add a deeper `/readyz` endpoint for dependency readiness.
-- [ ] Add an outage simulation test with mock transport.
+- [x] Add LiteLLM and Redis checks to `/healthz`.
+- [x] Add a deeper `/readyz` endpoint for dependency readiness.
+- [x] Add an outage simulation test with mock transport.
 
 ## P1: Streaming
 
