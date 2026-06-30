@@ -31,7 +31,6 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2"
           memory: 512M
 
   litellm:
@@ -69,7 +68,6 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2"
           memory: 1G
 
   postgres:
