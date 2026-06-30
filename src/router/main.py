@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from router.config import load_and_validate
 from router.health import all_ready, gather_health
+from router.metrics import Metrics
 from router.redaction import redact_payload
 from router.routing import _timeout_for, choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
@@ -42,6 +43,7 @@ def create_app(
         litellm_path=litellm_config_path,
     )
     app.state.session_store = _session_store(app.state.redis_url)
+    app.state.metrics = Metrics()
     app.state.async_sleep = asyncio.sleep
 
     @app.get("/healthz")
@@ -57,6 +59,10 @@ def create_app(
             return JSONResponse(status_code=200, content=statuses)
         statuses["status"] = "not ready"
         return JSONResponse(status_code=503, content=statuses)
+
+    @app.get("/metrics")
+    async def metrics() -> JSONResponse:
+        return JSONResponse(status_code=200, content=app.state.metrics.snapshot())
 
     @app.get("/v1/models")
     async def models(request: Request) -> Response:
@@ -152,6 +158,7 @@ def create_app(
             fallback_count,
             original_model,
         )
+        app.state.metrics.record(current_model, fallback_count)
 
         if last_response is not None:
             if is_stream and _is_success(last_response):
