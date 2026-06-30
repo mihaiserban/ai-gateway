@@ -69,12 +69,12 @@ turn it into a NAS-ready personal v1.
 
 ## P1: Config
 
-- [ ] Add `src/router/router_config.yaml`.
-- [ ] Move TTL, allowed aliases, fallback chains, timeouts, and classifier
+- [x] Add `src/router/router_config.yaml`.
+- [x] Move TTL, allowed aliases, fallback chains, timeouts, and classifier
       keywords into config.
-- [ ] Validate config at startup.
-- [ ] Fail fast if router config references aliases missing from LiteLLM config.
-- [ ] Update `docs/PLAN.md` once config exists.
+- [x] Validate config at startup.
+- [x] Fail fast if router config references aliases missing from LiteLLM config.
+- [x] Update `docs/PLAN.md` once config exists.
 
 ## P1: Auth And Access
 

@@ -15,7 +15,6 @@ logger = logging.getLogger("router.config")
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "router_config.yaml"
 DEFAULT_LITELLM_PATH = Path(__file__).resolve().parent.parent / "litellm.config.yaml"
-DEFAULT_TIMEOUT_SECONDS = 120
 
 
 class ConfigValidationError(ValueError):
@@ -48,8 +47,6 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         "code_signals": list(keywords.get("code_signals") or []),
         "reasoning_signals": list(keywords.get("reasoning_signals") or []),
     }
-    if not classifier_keywords["code_signals"] and not classifier_keywords["reasoning_signals"]:
-        classifier_keywords = {}
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
