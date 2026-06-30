@@ -73,6 +73,7 @@ async def live_payload(app_state: Any, health: dict[str, str], readiness: dict[s
         },
     }
 
+
 class _Connection(Protocol):
     def __enter__(self) -> Any: ...
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None: ...
@@ -438,10 +439,11 @@ DASHBOARD_HTML = """<!doctype html>
     function renderAvailability(map) {
       const rows = Object.entries(map).map(([model, value]) => [
         `<span class="mono">${escapeHtml(model)}</span>`,
+        `<span class="badge">${escapeHtml(value.served_model || "-")}</span>`,
         fmt.format(value.attempts || 0),
         badge(`${value.availability_percent || 0}%`, (value.availability_percent || 0) >= 90 ? "ok" : (value.availability_percent || 0) >= 50 ? "" : "error"),
       ]);
-      document.getElementById("availability").innerHTML = table(["Model", "Attempts", "Availability"], rows);
+      document.getElementById("availability").innerHTML = table(["Provider / Model", "Alias", "Attempts", "Availability"], rows);
     }
 
     function renderFailures(rows) {

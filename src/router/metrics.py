@@ -13,6 +13,7 @@ class ProviderAvailability:
     retryable_failures: int = 0
     last_status: int | str | None = None
     last_failure_ts: float | None = None
+    served_model: str | None = None
 
     def snapshot(self) -> dict[str, object]:
         availability_percent = 0.0
@@ -26,6 +27,7 @@ class ProviderAvailability:
             "availability_percent": availability_percent,
             "last_status": self.last_status,
             "last_failure_ts": self.last_failure_ts,
+            "served_model": self.served_model,
         }
 
 
@@ -78,6 +80,8 @@ class Metrics:
         with self._lock:
             key = provider_model or model
             availability = self.provider_availability.setdefault(key, ProviderAvailability())
+            if availability.served_model is None:
+                availability.served_model = model
             availability.attempts += 1
             availability.last_status = status
             if success:
