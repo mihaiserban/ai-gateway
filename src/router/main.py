@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import time
 from typing import Any, AsyncIterator
@@ -17,6 +18,8 @@ from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
 
 
 FORWARDED_HEADERS = {"authorization", "content-type", "accept"}
+
+logger = logging.getLogger("router")
 
 
 def create_app(
@@ -59,6 +62,7 @@ def create_app(
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
+        start = time.perf_counter()
         body = await request.json()
         token = request.headers.get("authorization")
         session_id = request.headers.get("X-Session-Id") or _fallback_session_id(body, token)
@@ -103,6 +107,7 @@ def create_app(
             attempt += 1
 
         fallback_count = attempt
+        latency_ms = int((time.perf_counter() - start) * 1000)
 
         if last_response is not None and _is_success(last_response):
             await app.state.session_store.set(
@@ -123,6 +128,20 @@ def create_app(
         }
         if fallback_count > 0:
             extra_headers["X-Gateway-Fallback-From"] = original_model
+
+        if last_response is not None:
+            status = last_response.status_code
+        else:
+            status = "error"
+        _log_request(
+            session_id,
+            current_model,
+            decision.reason,
+            status,
+            latency_ms,
+            fallback_count,
+            original_model,
+        )
 
         if last_response is not None:
             if is_stream and _is_success(last_response):
@@ -170,6 +189,29 @@ def create_app(
 
 def _is_success(response: httpx.Response) -> bool:
     return 200 <= response.status_code < 300
+
+
+def _log_request(
+    session_id: str,
+    model: str,
+    reason: str,
+    status: int | str,
+    latency_ms: int,
+    fallback_count: int,
+    fallback_from: str,
+) -> None:
+    session_id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+    parts = [
+        f"session_id_hash={session_id_hash}",
+        f"model={model}",
+        f"reason={reason}",
+        f"status={status}",
+        f"latency_ms={latency_ms}",
+        f"fallback_count={fallback_count}",
+    ]
+    if fallback_count > 0:
+        parts.append(f"fallback_from={fallback_from}")
+    logger.info(" ".join(parts))
 
 
 def _is_retryable_status(status_code: int) -> bool:
