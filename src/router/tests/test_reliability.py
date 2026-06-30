@@ -81,7 +81,7 @@ timeouts:
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "timeout-proxy"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -127,7 +127,7 @@ async def test_backoff_sleeps_between_fallback_attempts():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-1"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -152,7 +152,7 @@ async def test_backoff_not_called_on_client_error():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "no-sleep-400"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 400
@@ -180,7 +180,7 @@ async def test_backoff_grows_exponentially():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-grow"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -206,7 +206,7 @@ async def test_backoff_capped_at_max_delay():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-cap"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 503
@@ -232,7 +232,7 @@ async def test_backoff_no_sleep_after_final_attempt():
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "final-attempt"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
@@ -256,7 +256,7 @@ async def test_backoff_no_sleep_on_non_retryable_404():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "no-sleep-404"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 404

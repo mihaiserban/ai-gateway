@@ -37,7 +37,7 @@ async def test_models_proxies_to_litellm():
 
 
 @pytest.mark.asyncio
-async def test_chat_rewrites_model_to_classified_alias():
+async def test_chat_rewrites_model_to_explicit_alias():
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -51,7 +51,7 @@ async def test_chat_rewrites_model_to_classified_alias():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "abc"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -89,7 +89,7 @@ async def test_chat_keeps_warm_session_model():
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "sticky"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         await client.post(
             "/v1/chat/completions",
@@ -136,16 +136,16 @@ async def test_chat_uses_stable_fallback_session_id():
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer sk-stable-key"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         # Same messages but different token should produce a different session ID.
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer sk-other-key"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
-    # Both classify to opencodego-fast independently because sessions are keyed by token fingerprint.
+    # Both requests use the explicit model independently because sessions are keyed by token fingerprint.
     assert seen_models == ["opencodego-fast", "opencodego-fast"]
 
     # Sanity check the helper itself enforces key separation.
@@ -224,7 +224,7 @@ async def test_chat_does_not_write_session_on_failed_upstream():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "poison-test"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         assert response.status_code == 503
         # Whole opencodego-fast chain exhausted.
@@ -234,14 +234,14 @@ async def test_chat_does_not_write_session_on_failed_upstream():
         response2 = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "poison-test"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response2.status_code == 503
     # No session was written after the failed first request, so the second
     # request reclassifies from scratch instead of sticking to a failed model.
     assert seen_models == ["opencodego-fast", "fast", "deepseek-pro"]
-    assert response2.headers["X-Gateway-Reason"] == "classified"
+    assert response2.headers["X-Gateway-Reason"] == "explicit-model"
 
 
 @pytest.mark.asyncio
@@ -262,13 +262,13 @@ async def test_chat_retries_next_fallback_on_retryable_error():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "retry-test"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
     assert seen_models == ["opencodego-fast", "fast"]
     assert response.headers["X-Gateway-Model"] == "fast"
-    assert response.headers["X-Gateway-Reason"] == "classified"
+    assert response.headers["X-Gateway-Reason"] == "explicit-model"
     assert response.headers["X-Gateway-Fallback-From"] == "opencodego-fast"
     assert response.headers["X-Gateway-Fallback-Count"] == "1"
 
@@ -288,7 +288,7 @@ async def test_chat_does_not_retry_on_client_error():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "no-retry-test"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 400
@@ -315,7 +315,7 @@ async def test_chat_retries_on_timeout_exception():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "timeout-test"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -341,7 +341,7 @@ async def test_chat_stores_fallback_count_in_session():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "fallback-count-test"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -373,7 +373,7 @@ async def test_chat_fallback_from_warm_session_uses_warm_model_chain():
         first = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "warm-chain"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         assert first.status_code == 200
         assert first.headers["X-Gateway-Model"] == "fast"
@@ -414,7 +414,7 @@ async def test_chat_exhausted_fallback_returns_last_error_with_headers():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "exhausted"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 503
@@ -439,7 +439,7 @@ async def test_chat_exhausted_transport_errors_return_gateway_error_with_headers
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "exhausted-timeouts"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 504

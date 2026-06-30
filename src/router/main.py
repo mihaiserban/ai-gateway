@@ -161,7 +161,7 @@ def create_app(
                 {
                     "model": current_model,
                     "last_used_ts": time.time(),
-                    "classification": decision.reason,
+                    "reason": decision.reason,
                     "fallback_count": fallback_count,
                 },
                 ttl_seconds=app.state.route_config.cache_ttl_seconds,

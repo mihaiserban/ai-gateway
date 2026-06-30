@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from router.classifier import CODE_SIGNALS, REASONING_SIGNALS, classify_request
-
 DEFAULT_ALLOWED_MODELS = {
     "fast",
     "deepseek-pro",
@@ -28,10 +26,10 @@ DEFAULT_TIMEOUT_SECONDS = 120
 @dataclass(frozen=True)
 class RouteConfig:
     cache_ttl_seconds: int = 600
+    default_model: str = "fast"
     allowed_models: set[str] = field(default_factory=lambda: set(DEFAULT_ALLOWED_MODELS))
     fallbacks: dict[str, list[str]] = field(default_factory=lambda: dict(DEFAULT_FALLBACKS))
     timeouts: dict[str, int] = field(default_factory=dict)
-    classifier_keywords: dict[str, list[str]] = field(default_factory=dict)
     retry_base_delay: float = 0.2
     retry_max_delay: float = 2.0
     cache_key_aliases: list[str] = field(default_factory=list)
@@ -66,17 +64,7 @@ def choose_model(
         if isinstance(session_model, str) and session_model in config.allowed_models:
             return RouteDecision(model=session_model, reason="warm-session")
 
-    classified = _classify(request, config)
-    if classified not in config.allowed_models:
-        classified = "fast"
-    return RouteDecision(model=classified, reason="classified")
-
-
-def _classify(request: dict[str, Any], config: RouteConfig) -> str:
-    keywords = config.classifier_keywords
-    code = tuple(keywords.get("code_signals") or CODE_SIGNALS)
-    reasoning = tuple(keywords.get("reasoning_signals") or REASONING_SIGNALS)
-    return classify_request(request, code_signals=code, reasoning_signals=reasoning)
+    return RouteDecision(model=config.default_model, reason="default-model")
 
 
 def next_fallback(model: str, fallback_count: int, config: RouteConfig) -> str | None:

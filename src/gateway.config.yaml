@@ -3,32 +3,9 @@
 
 router:
   cache_ttl_seconds: 600
+  default_model: fast
   retry_base_delay: 0.2
   retry_max_delay: 2.0
-  classifier_keywords:
-    code_signals:
-      - " refactor"
-      - " implement"
-      - " stack trace"
-      - " traceback"
-      - " diff"
-      - ".py"
-      - ".ts"
-      - ".tsx"
-      - ".js"
-      - ".go"
-      - ".rs"
-      - "src/"
-      - "tests/"
-    reasoning_signals:
-      - "analyze"
-      - "architecture"
-      - "design"
-      - "why"
-      - "race condition"
-      - "root cause"
-      - "debug"
-      - "explain"
   # Providers that support prompt_cache_key: openai, deepseek, anthropic; not ollama.
   cache_key_aliases: []
 

@@ -36,24 +36,20 @@ def load_route_config(config_path: str | None = None) -> RouteConfig:
 
 def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     cache_ttl = int(data.get("cache_ttl_seconds", 600))
+    default_model = str(data.get("default_model", "fast"))
     allowed = set(data.get("allowed_models") or DEFAULT_ALLOWED_MODELS)
     fallbacks = dict(data.get("fallbacks") or DEFAULT_FALLBACKS)
     timeouts = dict(data.get("timeouts") or {})
-    keywords = data.get("classifier_keywords") or {}
-    classifier_keywords = {
-        "code_signals": list(keywords.get("code_signals") or []),
-        "reasoning_signals": list(keywords.get("reasoning_signals") or []),
-    }
     retry_base_delay = float(data.get("retry_base_delay", 0.2))
     retry_max_delay = float(data.get("retry_max_delay", 2.0))
     cache_key_aliases = list(data.get("cache_key_aliases") or [])
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
+        default_model=default_model,
         allowed_models=allowed,
         fallbacks=fallbacks,
         timeouts=timeouts,
-        classifier_keywords=classifier_keywords,
         retry_base_delay=retry_base_delay,
         retry_max_delay=retry_max_delay,
         cache_key_aliases=cache_key_aliases,
@@ -63,6 +59,8 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
 def validate_route_config(config: RouteConfig) -> None:
     """Fail fast if fallbacks reference aliases outside ``allowed_models``."""
     allowed = config.allowed_models
+    if config.default_model not in allowed:
+        raise ConfigValidationError(f"default_model {config.default_model!r} is not in allowed_models")
 
     for key, targets in config.fallbacks.items():
         if key not in allowed:

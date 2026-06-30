@@ -32,12 +32,12 @@ def render_router_config(config: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "cache_ttl_seconds": router.get("cache_ttl_seconds", 600),
+        "default_model": router.get("default_model", models[0]["name"]),
         "retry_base_delay": router.get("retry_base_delay", 0.2),
         "retry_max_delay": router.get("retry_max_delay", 2.0),
         "allowed_models": [model["name"] for model in models],
         "fallbacks": {model["name"]: list(model.get("fallbacks") or []) for model in models},
         "timeouts": {model["name"]: model.get("timeout", 120) for model in models},
-        "classifier_keywords": router.get("classifier_keywords") or {},
         "cache_key_aliases": list(router.get("cache_key_aliases") or []),
     }
 
@@ -107,6 +107,7 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
 
 
 def _validate(config: dict[str, Any]) -> None:
+    router = _mapping(config, "router")
     models = _models(config)
     names: set[str] = set()
     for model in models:
@@ -122,6 +123,10 @@ def _validate(config: dict[str, Any]) -> None:
         for target in model.get("fallbacks") or []:
             if target not in names:
                 raise ConfigError(f"fallback target {target!r} under {name!r} is not a defined model")
+
+    default_model = router.get("default_model", models[0]["name"])
+    if default_model not in names:
+        raise ConfigError(f"default_model {default_model!r} is not a defined model")
 
 
 def _models(config: dict[str, Any]) -> list[dict[str, Any]]:

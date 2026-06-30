@@ -38,6 +38,7 @@ def test_load_route_config_from_yaml_populates_fields(tmp_path):
         tmp_path / "router_config.yaml",
         """
 cache_ttl_seconds: 300
+default_model: deepseek-pro
 allowed_models:
   - fast
   - deepseek-pro
@@ -47,11 +48,6 @@ fallbacks:
 timeouts:
   fast: 30
   deepseek-pro: 60
-classifier_keywords:
-  code_signals:
-    - " refactor"
-  reasoning_signals:
-    - " analyze"
 """,
     )
 
@@ -59,13 +55,10 @@ classifier_keywords:
 
     assert isinstance(config, RouteConfig)
     assert config.cache_ttl_seconds == 300
+    assert config.default_model == "deepseek-pro"
     assert config.allowed_models == {"fast", "deepseek-pro"}
     assert config.fallbacks == {"fast": ["deepseek-pro"]}
     assert config.timeouts == {"fast": 30, "deepseek-pro": 60}
-    assert config.classifier_keywords == {
-        "code_signals": [" refactor"],
-        "reasoning_signals": [" analyze"],
-    }
 
 
 def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
@@ -78,7 +71,7 @@ def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
     assert config.allowed_models == set(DEFAULT_ALLOWED_MODELS)
     assert config.fallbacks == dict(DEFAULT_FALLBACKS)
     assert config.timeouts == {}
-    assert config.classifier_keywords == {}
+    assert config.default_model == "fast"
 
 
 def test_load_route_config_respects_env_var(tmp_path, monkeypatch):
@@ -168,6 +161,26 @@ fallbacks:
         config_mod.validate_route_config(config)
 
     assert "unknown-model" in str(exc.value)
+
+
+def test_validate_fails_when_default_model_not_in_allowed_models(tmp_path):
+    cfg_path = _write_yaml(
+        tmp_path / "router_config.yaml",
+        """
+cache_ttl_seconds: 600
+default_model: expensive
+allowed_models:
+  - fast
+fallbacks:
+  fast: []
+""",
+    )
+    config = config_mod.load_route_config(config_path=str(cfg_path))
+
+    with pytest.raises(config_mod.ConfigValidationError) as exc:
+        config_mod.validate_route_config(config)
+
+    assert "default_model" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------

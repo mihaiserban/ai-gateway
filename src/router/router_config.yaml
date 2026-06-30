@@ -1,6 +1,7 @@
 # Generated from src/gateway.config.yaml. Do not edit directly.
 
 cache_ttl_seconds: 600
+default_model: fast
 retry_base_delay: 0.2
 retry_max_delay: 2.0
 allowed_models:
@@ -29,28 +30,4 @@ timeouts:
   opencodego-fast: 120
   opencodego-code: 120
   ollama-cloud: 120
-classifier_keywords:
-  code_signals:
-  - ' refactor'
-  - ' implement'
-  - ' stack trace'
-  - ' traceback'
-  - ' diff'
-  - .py
-  - .ts
-  - .tsx
-  - .js
-  - .go
-  - .rs
-  - src/
-  - tests/
-  reasoning_signals:
-  - analyze
-  - architecture
-  - design
-  - why
-  - race condition
-  - root cause
-  - debug
-  - explain
 cache_key_aliases: []

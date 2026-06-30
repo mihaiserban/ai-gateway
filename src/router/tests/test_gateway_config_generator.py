@@ -23,6 +23,7 @@ def test_render_router_config_from_gateway_config():
     assert router_config["cache_ttl_seconds"] == 600
     assert router_config["retry_base_delay"] == 0.2
     assert router_config["retry_max_delay"] == 2.0
+    assert router_config["default_model"] == "fast"
     assert router_config["allowed_models"] == [
         "fast",
         "deepseek-pro",
@@ -32,7 +33,7 @@ def test_render_router_config_from_gateway_config():
     ]
     assert router_config["fallbacks"]["deepseek-pro"] == ["opencodego-code", "fast"]
     assert router_config["timeouts"]["opencodego-fast"] == 120
-    assert "code_signals" in router_config["classifier_keywords"]
+    assert "classifier_keywords" not in router_config
     assert router_config["cache_key_aliases"] == []
 
 
@@ -67,11 +68,9 @@ def test_validation_rejects_unknown_fallback_target(tmp_path):
         """
 router:
   cache_ttl_seconds: 600
+  default_model: fast
   retry_base_delay: 0.2
   retry_max_delay: 2.0
-  classifier_keywords:
-    code_signals: []
-    reasoning_signals: []
   cache_key_aliases: []
 litellm:
   settings:

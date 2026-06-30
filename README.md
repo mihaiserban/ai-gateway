@@ -52,7 +52,6 @@ and Redis stay internal to Docker.
     +-- router/
         +-- main.py            # FastAPI sticky router
         +-- routing.py         # routing and fallback decisions
-        +-- classifier.py      # deterministic request classifier
         +-- redaction.py       # outbound prompt secret redaction
         +-- sessions.py        # Redis or memory session store
         +-- health.py          # dependency health checks
@@ -76,7 +75,7 @@ The router intentionally implements a small OpenAI-compatible surface:
 
 | Endpoint | Method | Behavior |
 | --- | --- | --- |
-| `/v1/chat/completions` | `POST` | Classifies or honors the requested model alias, redacts prompt secrets, forwards to LiteLLM, supports non-streaming and SSE streaming responses, and retries configured fallback aliases for retryable upstream failures. |
+| `/v1/chat/completions` | `POST` | Honors the requested model alias or uses the configured default, redacts prompt secrets, forwards to LiteLLM, supports non-streaming and SSE streaming responses, and retries configured fallback aliases for retryable upstream failures. |
 | `/v1/models` | `GET` | Proxies model discovery to LiteLLM. |
 | `/healthz` | `GET` | Liveness-style health; returns HTTP `200` with per-dependency status. |
 | `/readyz` | `GET` | Readiness; returns HTTP `503` when an enabled dependency is degraded. |
@@ -88,7 +87,7 @@ Successful chat responses include gateway routing headers:
 | Header | Meaning |
 | --- | --- |
 | `X-Gateway-Model` | Alias actually served by LiteLLM after fallback, if any. |
-| `X-Gateway-Reason` | `explicit-model`, `warm-session`, or `classified`. |
+| `X-Gateway-Reason` | `explicit-model`, `warm-session`, or `default-model`. |
 | `X-Gateway-Fallback-Count` | Number of router fallback hops. |
 | `X-Gateway-Fallback-From` | Original selected alias, present only after fallback. |
 
@@ -103,14 +102,7 @@ Routing is deterministic and config-driven:
    router uses that alias.
 2. Otherwise, if `X-Session-Id` or the derived fallback session is warm, the
    router reuses the previous successful model for that session.
-3. Otherwise, the request is classified from message content:
-   - image content classifies as `vision`; because `vision` is not currently in
-     `allowed_models`, the router falls back to `fast` unless you add a real
-     vision alias.
-   - code-looking prompts route to `opencodego-fast`.
-   - analysis, debugging, architecture, and design prompts route to
-     `deepseek-pro`.
-   - everything else routes to `fast`.
+3. Otherwise, the router uses the configured `default_model`.
 4. Retryable upstream failures can move through the configured fallback chain.
 
 Default aliases:
@@ -165,7 +157,7 @@ python3 src/scripts/generate_configs.py
 
 `src/gateway.config.yaml` controls provider model IDs, API base env names,
 pricing metadata, LiteLLM cache settings, allowed aliases, fallback chains,
-session TTL, retry delays, per-alias timeouts, classifier keywords, and aliases
+default model, session TTL, retry delays, per-alias timeouts, and aliases
 that should receive `prompt_cache_key`. The generated files
 `src/litellm.config.yaml` and `src/router/router_config.yaml` are kept committed
 for the Docker stack, but they are not the human edit point.
@@ -412,9 +404,9 @@ Requests route to an unexpected model:
 - Check `X-Gateway-Reason`.
 - If it is `warm-session`, change `X-Session-Id` or wait for
   `cache_ttl_seconds` to expire.
-- If it is `classified`, adjust `classifier_keywords` in
-  `src/gateway.config.yaml`, then run `python3 src/scripts/generate_configs.py`.
 - If it is `explicit-model`, the request body supplied an allowed `model`.
+- If it is `default-model`, set `model` explicitly in the client or change
+  `default_model` in `src/gateway.config.yaml`, then regenerate configs.
 
 Fallbacks are happening:
 

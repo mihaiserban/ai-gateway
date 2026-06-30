@@ -28,6 +28,7 @@ async def test_chat_stream_passthrough_forwards_chunks():
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "stream-1"},
             json={
+                "model": "opencodego-fast",
                 "messages": [{"role": "user", "content": "please refactor src/app.py"}],
                 "stream": True,
             },
@@ -35,7 +36,7 @@ async def test_chat_stream_passthrough_forwards_chunks():
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/event-stream"
-    # The upstream model alias was rewritten to the classified alias.
+    # The upstream model alias was rewritten to the explicit alias.
     assert seen["json"]["model"] == "opencodego-fast"
     # All SSE chunks arrive in order, byte-for-byte.
     assert response.content == SSE_BODY
@@ -58,6 +59,7 @@ async def test_chat_stream_sets_gateway_headers():
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "stream-headers"},
             json={
+                "model": "opencodego-fast",
                 "messages": [{"role": "user", "content": "please refactor src/app.py"}],
                 "stream": True,
             },
@@ -65,7 +67,7 @@ async def test_chat_stream_sets_gateway_headers():
 
     assert response.status_code == 200
     assert response.headers["X-Gateway-Model"] == "opencodego-fast"
-    assert response.headers["X-Gateway-Reason"] == "classified"
+    assert response.headers["X-Gateway-Reason"] == "explicit-model"
     assert response.headers["X-Gateway-Fallback-Count"] == "0"
 
 
@@ -86,6 +88,7 @@ async def test_chat_stream_writes_session_after_200():
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "stream-session"},
             json={
+                "model": "opencodego-fast",
                 "messages": [{"role": "user", "content": "please refactor src/app.py"}],
                 "stream": True,
             },
@@ -94,7 +97,7 @@ async def test_chat_stream_writes_session_after_200():
     session = await app.state.session_store.get("stream-session")
     assert session is not None
     assert session["model"] == "opencodego-fast"
-    assert session["classification"] == "classified"
+    assert session["reason"] == "explicit-model"
 
 
 @pytest.mark.asyncio
@@ -120,6 +123,7 @@ async def test_chat_stream_fallback_before_stream_starts():
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "stream-fallback"},
             json={
+                "model": "opencodego-fast",
                 "messages": [{"role": "user", "content": "please refactor src/app.py"}],
                 "stream": True,
             },

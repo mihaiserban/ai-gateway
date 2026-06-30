@@ -24,7 +24,7 @@ async def test_chat_logs_request_metadata(caplog):
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-meta"},
-                json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+                json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
             )
 
     assert response.status_code == 200
@@ -33,7 +33,7 @@ async def test_chat_logs_request_metadata(caplog):
     line = lines[0]
     assert "session_id_hash=" in line
     assert "model=opencodego-fast" in line
-    assert "reason=classified" in line
+    assert "reason=explicit-model" in line
     assert "status=200" in line
     assert "latency_ms=" in line
     assert "fallback_count=0" in line
@@ -60,7 +60,7 @@ async def test_chat_logs_fallback_from_when_fallback_occurred(caplog):
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-fb"},
-                json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+                json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
             )
 
     assert response.status_code == 200
@@ -86,7 +86,7 @@ async def test_chat_log_omits_raw_token(caplog):
             await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": f"Bearer {secret}", "X-Session-Id": "log-secret"},
-                json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+                json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
             )
 
     lines = _log_lines(caplog)
@@ -131,7 +131,7 @@ async def test_chat_log_on_error_path_logs_error_status(caplog):
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-err"},
-                json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+                json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
             )
 
     assert response.status_code == 504
@@ -158,7 +158,7 @@ async def test_chat_log_on_upstream_error_status_logs_status(caplog):
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-up-err"},
-                json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+                json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
             )
 
     assert response.status_code == 503
@@ -188,6 +188,7 @@ async def test_chat_stream_logs_request_metadata(caplog):
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": "log-stream"},
                 json={
+                    "model": "opencodego-fast",
                     "messages": [{"role": "user", "content": "please refactor src/app.py"}],
                     "stream": True,
                 },

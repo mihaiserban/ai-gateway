@@ -70,7 +70,7 @@ async def test_cache_key_set_for_allowed_alias(tmp_path):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-session-1"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -111,7 +111,7 @@ async def test_cache_key_not_set_for_disallowed_alias(tmp_path):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-session-2"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -154,7 +154,7 @@ async def test_cache_key_stable_across_fallback(tmp_path):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-session-3"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -197,7 +197,7 @@ async def test_cache_key_absent_by_default(tmp_path):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-session-4"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -239,7 +239,7 @@ async def test_cache_key_removed_on_fallback_to_non_allowed_alias(tmp_path):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-session-5"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -288,7 +288,7 @@ async def test_cache_response_headers_are_forwarded(tmp_path):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-response-headers"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200

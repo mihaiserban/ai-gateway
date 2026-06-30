@@ -27,7 +27,6 @@ src/
     Dockerfile
     requirements.txt
     main.py
-    classifier.py
     redaction.py
     routing.py
     router_config.yaml
@@ -121,7 +120,7 @@ curl http://localhost:4100/v1/chat/completions \
 The router adds these response headers:
 
 - `X-Gateway-Model`: selected LiteLLM alias
-- `X-Gateway-Reason`: `classified`, `explicit-model`, or `warm-session`
+- `X-Gateway-Reason`: `explicit-model`, `warm-session`, or `default-model`
 - `X-Gateway-Fallback-Count`: number of fallback hops (0 when no fallback)
 - `X-Gateway-Fallback-From`: original alias, only present when a fallback occurred
 
@@ -166,17 +165,42 @@ Agents should use LiteLLM virtual keys, not the master key. Create one key
 per agent/tool with a model allowlist so a background summarizer cannot use
 an expensive alias.
 
+### Per-Agent Keys
+
+The following virtual keys are provisioned on a fresh stack (re-create them
+after a `docker compose down -v` that wipes Postgres):
+
+| Agent / Tool   | Key alias      | Allowlist                                         | Max budget |
+| -------------- | -------------- | ------------------------------------------------- | ---------- |
+| Codex CLI      | `codex-cli`    | `opencodego-fast`, `opencodego-code`, `fast`, `deepseek-pro` | $5.00      |
+| Summarizer     | `summarizer`   | `fast`, `ollama-cloud`                            | $2.00      |
+
+The `summarizer` key is intentionally restricted to the cheaper aliases so a
+background summarizer cannot spend on `deepseek-pro` or `opencodego-*`.
+
+### Creating A Virtual Key
+
 Create a virtual key (admin only, with the master key):
 
 ```bash
-curl -X POST http://localhost:4000/key/generate \
-  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "key_alias": "codex-cli",
-    "models": ["opencodego-fast", "opencodego-code", "fast", "reasoning"],
-    "max_budget": 5.0
-  }'
+docker compose exec litellm python3 -c "
+import os, json, urllib.request
+body = json.dumps({
+    'key_alias': 'codex-cli',
+    'models': ['opencodego-fast', 'opencodego-code', 'fast', 'deepseek-pro'],
+    'max_budget': 5.0
+}).encode()
+req = urllib.request.Request(
+    'http://localhost:4000/key/generate',
+    data=body,
+    headers={
+        'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY'],
+        'Content-Type': 'application/json',
+    },
+    method='POST',
+)
+print(json.load(urllib.request.urlopen(req, timeout=30))['key'])
+"
 ```
 
 Use the returned `key` value as the `Authorization: Bearer <key>` for that
@@ -218,10 +242,7 @@ The router chooses aliases with deterministic rules:
 
 - explicit allowed `model` field wins
 - warm `X-Session-Id` keeps the previous model until the Redis TTL expires
-- image content routes to `vision` if that alias is later enabled
-- code-looking prompts route to `opencodego-fast`
-- analysis/debug/design prompts route to `deepseek-pro`
-- everything else routes to `fast`
+- otherwise, the configured `default_model` is used
 
 Default session TTL is 600 seconds.
 

@@ -9,7 +9,7 @@ from router.metrics import Metrics
 
 @pytest.mark.asyncio
 async def test_metrics_counts_requests_and_models():
-    """Two requests using different classified models bump the right counters."""
+    """Two requests using different selected models bump the right counters."""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
@@ -22,7 +22,7 @@ async def test_metrics_counts_requests_and_models():
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "s1"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         # fast: short plain prompt with no code/reasoning signals
         await client.post(
@@ -55,7 +55,7 @@ async def test_metrics_counts_fallbacks():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "fb"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     assert response.status_code == 200
@@ -64,7 +64,7 @@ async def test_metrics_counts_fallbacks():
     metrics: Metrics = app.state.metrics
     assert metrics.requests_total == 1
     assert metrics.fallback_count_total == 1
-    # selected_model_counts tracks the originally chosen (classified) model.
+    # selected_model_counts tracks the originally chosen model.
     assert metrics.selected_model_counts == {"opencodego-fast": 1}
     # served_model_counts tracks the model that actually served the request.
     assert metrics.served_model_counts == {"fast": 1}
@@ -140,7 +140,7 @@ async def test_metrics_tracks_availability_for_each_upstream_attempt():
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "availability"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
 
     provider_availability = app.state.metrics.snapshot()["provider_availability"]
@@ -175,7 +175,7 @@ async def test_metrics_endpoint_returns_counts():
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "m1"},
-            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "opencodego-fast", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
         )
         resp = await client.get("/metrics")
 
