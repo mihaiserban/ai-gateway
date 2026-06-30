@@ -149,6 +149,7 @@ model_prices:
 
 
 def test_validate_ok_for_consistent_config(tmp_path):
+    cfg_path = _good_yaml(tmp_path)
     config = config_mod.load_route_config(config_path=str(cfg_path))
     # Should not raise.
     config_mod.validate_route_config(config)

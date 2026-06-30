@@ -174,6 +174,7 @@ def test_render_router_config_includes_resolved_model_prices():
 
 
 def test_validation_rejects_unknown_fallback_target(tmp_path):
+    config_path = tmp_path / "gateway.config.yaml"
     config_path.write_text(
         """
 router:
