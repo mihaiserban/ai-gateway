@@ -5,7 +5,7 @@ This runs a small personal AI gateway stack with Docker:
 - Sticky FastAPI router on port `4100`
 - LiteLLM proxy on internal port `4000`
 - Postgres for LiteLLM virtual keys, spend tracking, and UI state
-- Redis for LiteLLM cache state and router session stickiness
+- Redis for LiteLLM cache state and router session stickiness (see [docs/redis.md](../docs/redis.md))
 
 Agents talk to the router. The router chooses an alias, keeps warm sessions on
 the same alias, redacts obvious secrets, and forwards the request to LiteLLM.
@@ -173,6 +173,18 @@ counts, provider availability, token usage by model, estimated spend, and recent
 failed upstream attempts. Historical cards use the router-owned
 `gateway_usage_events` table and default to the last 30 days.
 
+If the dashboard shows "Usage error" or remains at `Loading...`, check that
+Postgres is healthy and that `DATABASE_URL` is correct:
+
+```bash
+docker compose ps postgres
+curl http://localhost:4100/healthz | python3 -m json.tool
+```
+
+The usage summary uses a 5-second connect timeout and returns an empty fallback
+view when the ledger database is unreachable, so the rest of the dashboard still
+loads.
+
 ## Persistent Usage Ledger
 
 The router emits prompt-free usage events to an internal `usage-ledger` service.
@@ -295,7 +307,8 @@ The router chooses aliases with deterministic rules:
 - warm `X-Session-Id` keeps the previous model until the Redis TTL expires
 - otherwise, the configured `default_model` is used
 
-Default session TTL is 600 seconds.
+Default session TTL is 600 seconds. See [docs/redis.md](../docs/redis.md) for
+full Redis architecture and cache behavior.
 
 ## Synology Container Manager
 
