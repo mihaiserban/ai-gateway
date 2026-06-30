@@ -6,6 +6,7 @@ import pytest
 
 from scripts.generate_configs import (
     ConfigError,
+    _resolve_entry,
     generate,
     load_gateway_config,
     render_litellm_config,
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_render_router_config_from_gateway_config():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
-    models = config["models"]
+    entries = config["models"] + config.get("aliases", [])
 
     router_config = render_router_config(config)
 
@@ -25,27 +26,28 @@ def test_render_router_config_from_gateway_config():
     assert router_config["retry_base_delay"] == 0.2
     assert router_config["retry_max_delay"] == 2.0
     assert router_config["default_model"] == "coder"
-    assert router_config["allowed_models"] == [model["name"] for model in models]
+    assert router_config["allowed_models"] == [entry["name"] for entry in entries]
     assert router_config["fallbacks"] == {
-        model["name"]: list(model.get("fallbacks") or []) for model in models
+        entry["name"]: list(entry.get("fallbacks") or []) for entry in entries
     }
     assert router_config["timeouts"] == {
-        model["name"]: model.get("timeout", 120) for model in models
+        entry["name"]: entry.get("timeout", 120) for entry in entries
     }
     assert router_config["cache_key_aliases"] == []
     assert router_config["provider_models"] == {
-        model["name"]: model["litellm_model"] for model in models
+        entry["name"]: _resolve_entry(entry, {e["name"]: e for e in entries})["litellm_model"]
+        for entry in entries
     }
 
 
 def test_render_litellm_config_from_gateway_config():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
-    models = config["models"]
+    entries = config["models"] + config.get("aliases", [])
 
     litellm_config = render_litellm_config(config)
 
     first_entry = litellm_config["model_list"][0]
-    first_cfg = models[0]
+    first_cfg = entries[0]
     assert first_entry["model_name"] == first_cfg["name"]
     assert first_entry["litellm_params"]["model"] == first_cfg["litellm_model"]
     assert first_entry["litellm_params"]["api_key"] == f"os.environ/{first_cfg['api_key_env']}"
@@ -61,7 +63,7 @@ def test_render_litellm_config_from_gateway_config():
     assert litellm_config["litellm_settings"]["callbacks"] == config["litellm"]["logging"]["callbacks"]
     assert litellm_config["general_settings"]["master_key"] == "os.environ/LITELLM_MASTER_KEY"
     assert litellm_config["router_settings"]["fallbacks"] == [
-        {model["name"]: list(model.get("fallbacks") or [])} for model in models
+        {entry["name"]: list(entry.get("fallbacks") or [])} for entry in entries
     ]
 
 
