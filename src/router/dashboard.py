@@ -11,7 +11,6 @@ from psycopg.rows import dict_row
 
 from router.health import all_ready, gather_health
 
-
 SUPPORTED_WINDOWS = {1, 7, 30}
 DEFAULT_WINDOW_DAYS = 30
 

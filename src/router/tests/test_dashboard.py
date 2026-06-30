@@ -1,7 +1,5 @@
 from types import SimpleNamespace
 
-import pytest
-
 import httpx
 import pytest
 
@@ -209,3 +207,37 @@ async def test_dashboard_usage_api_defaults_to_30_days_when_ledger_disabled():
         "top_keys": [],
         "recent_failures": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_dashboard_routes_do_not_break_chat_or_metrics():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+            },
+        )
+
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        database_url=None,
+        transport=httpx.MockTransport(handler),
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        chat = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "dash-regression"},
+            json={"model": "coder", "messages": [{"role": "user", "content": "say OK"}]},
+        )
+        metrics = await client.get("/metrics")
+        live = await client.get("/dashboard/api/live")
+
+    assert chat.status_code == 200
+    assert metrics.status_code == 200
+    assert live.status_code == 200
+    assert metrics.json()["requests_total"] == 1
+    assert live.json()["metrics"]["requests_total"] == 1
