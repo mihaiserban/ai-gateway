@@ -48,12 +48,12 @@ services:
     command:
       - |
         echo "Waiting for Postgres and Redis to be fully ready..."
-        sleep 10
-        exec /app/docker/prod_entrypoint.sh --config=/app/config.yaml --port=4000
+        sleep 20
+        exec /app/docker/prod_entrypoint.sh --port=4000
     expose:
       - "4000"
     volumes:
-      - ./litellm.config.yaml:/app/config.yaml:ro
+      - ./litellm.config.yaml:/app/litellm.config.yaml:ro
       - ./litellm_logging/custom_logger.py:/app/custom_logger.py:ro
     depends_on:
       postgres:
@@ -66,8 +66,8 @@ services:
         - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -86,10 +86,11 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - pg_isready -d "$$POSTGRES_DB" -U "$$POSTGRES_USER"
+        - pg_isready -d "$$POSTGRES_DB" -U "$$POSTGRES_USER" && psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "SELECT 1;"
       interval: 10s
-      timeout: 5s
-      retries: 10
+      timeout: 10s
+      retries: 30
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
