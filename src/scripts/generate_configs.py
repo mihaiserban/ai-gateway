@@ -41,8 +41,7 @@ def render_router_config(config: dict[str, Any]) -> dict[str, Any]:
         "timeouts": {entry["name"]: entry.get("timeout", 120) for entry in entries},
         "cache_key_aliases": list(router.get("cache_key_aliases") or []),
         "provider_models": {
-            entry["name"]: _resolve_entry(entry, entries_by_name)["litellm_model"]
-            for entry in entries
+            entry["name"]: _resolve_entry(entry, entries_by_name)["litellm_model"] for entry in entries
         },
         "model_prices": {
             entry["name"]: price
@@ -157,9 +156,7 @@ def _validate_model_info(entry: dict[str, Any]) -> None:
         raise ConfigError(f"model_info for {entry['name']!r} must be a mapping")
     reasoning_level = model_info.get("reasoning_level")
     if reasoning_level is not None and reasoning_level not in {"none", "low", "medium", "high"}:
-        raise ConfigError(
-            f"reasoning_level for {entry['name']!r} must be one of none, low, medium, high"
-        )
+        raise ConfigError(f"reasoning_level for {entry['name']!r} must be one of none, low, medium, high")
 
 
 def _resolve_entry(

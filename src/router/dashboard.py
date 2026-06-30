@@ -72,7 +72,9 @@ class UsageSummaryStore:
 
 
 def _empty_usage_summary(days: int) -> dict[str, Any]:
-    return {"enabled": False, "period_days": days, "totals": {}} | {key: [] for key in ("top_models", "daily_usage", "top_keys", "recent_failures")}
+    return {"enabled": False, "period_days": days, "totals": {}} | {
+        key: [] for key in ("top_models", "daily_usage", "top_keys", "recent_failures")
+    }
 
 
 def _fetch_one(cur: Any, sql: str, days: int) -> dict[str, Any]:

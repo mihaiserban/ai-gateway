@@ -26,7 +26,12 @@ async def test_models_proxies_to_litellm(simple_route_config_path: str):
         return httpx.Response(200, json={"data": [{"id": "explorer"}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/models", headers={"Authorization": "Bearer test"})
@@ -45,7 +50,12 @@ async def test_chat_rewrites_model_to_explicit_alias(simple_route_config_path: s
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -65,7 +75,12 @@ async def test_chat_returns_422_for_empty_body(simple_route_config_path: str):
         raise AssertionError("empty request body should not be proxied")
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/v1/chat/completions")
@@ -83,7 +98,12 @@ async def test_chat_keeps_warm_session_model(simple_route_config_path: str):
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
@@ -130,7 +150,12 @@ async def test_chat_uses_stable_fallback_session_id(simple_route_config_path: st
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
@@ -218,7 +243,12 @@ async def test_chat_does_not_write_session_on_failed_upstream(simple_route_confi
         return httpx.Response(503, json={"error": "unavailable"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -256,7 +286,12 @@ async def test_chat_retries_next_fallback_on_retryable_error(simple_route_config
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -282,7 +317,12 @@ async def test_chat_does_not_retry_on_client_error(simple_route_config_path: str
         return httpx.Response(400, json={"error": "bad request"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -309,7 +349,12 @@ async def test_chat_retries_on_timeout_exception(simple_route_config_path: str):
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -335,7 +380,12 @@ async def test_chat_stores_fallback_count_in_session(simple_route_config_path: s
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -365,7 +415,12 @@ async def test_chat_fallback_from_warm_session_uses_warm_model_chain(simple_rout
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         # First request: coder fails, falls back to explorer, succeeds.
@@ -408,7 +463,12 @@ async def test_chat_exhausted_fallback_returns_last_error_with_headers(simple_ro
         return httpx.Response(503, json={"error": "unavailable"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -433,7 +493,12 @@ async def test_chat_exhausted_transport_errors_return_gateway_error_with_headers
         raise httpx.TimeoutException("request timed out")
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(

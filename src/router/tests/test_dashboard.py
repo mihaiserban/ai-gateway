@@ -59,11 +59,44 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
         def __init__(self) -> None:
             self.calls: list[tuple[str, tuple[object, ...]]] = []
             self.results: list[list[dict[str, object]]] = [
-                [{"requests": 4, "prompt_tokens": 30, "completion_tokens": 20, "total_tokens": 50, "estimated_cost_usd": 1.25, "avg_latency_ms": 125.0, "fallback_count": 2, "cache_hits": 1, "cache_misses": 2, "cache_unknown": 1}],
-                [{"served_model": "coder", "requests": 3, "prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30, "estimated_cost_usd": 1.0, "avg_latency_ms": 100.0}],
+                [
+                    {
+                        "requests": 4,
+                        "prompt_tokens": 30,
+                        "completion_tokens": 20,
+                        "total_tokens": 50,
+                        "estimated_cost_usd": 1.25,
+                        "avg_latency_ms": 125.0,
+                        "fallback_count": 2,
+                        "cache_hits": 1,
+                        "cache_misses": 2,
+                        "cache_unknown": 1,
+                    }
+                ],
+                [
+                    {
+                        "served_model": "coder",
+                        "requests": 3,
+                        "prompt_tokens": 20,
+                        "completion_tokens": 10,
+                        "total_tokens": 30,
+                        "estimated_cost_usd": 1.0,
+                        "avg_latency_ms": 100.0,
+                    }
+                ],
                 [{"day": "2026-06-30", "requests": 4, "total_tokens": 50, "estimated_cost_usd": 1.25}],
                 [{"key_hash": "abc123", "requests": 4, "total_tokens": 50, "estimated_cost_usd": 1.25}],
-                [{"timestamp": 1782820800.0, "served_model": "coder", "provider_model": "ollama_chat/kimi-k2.7-code", "status": "503", "error_class": "http_503", "latency_ms": 250, "fallback_count": 1}],
+                [
+                    {
+                        "timestamp": 1782820800.0,
+                        "served_model": "coder",
+                        "provider_model": "ollama_chat/kimi-k2.7-code",
+                        "status": "503",
+                        "error_class": "http_503",
+                        "latency_ms": 250,
+                        "fallback_count": 1,
+                    }
+                ],
             ]
 
         def execute(self, sql: str, params: tuple[object, ...]) -> None:

@@ -317,12 +317,14 @@ def _log_request(
     ]
     if provider_model:
         parts.append(f"provider_model={provider_model}")
-    parts.extend([
-        f"reason={reason}",
-        f"status={status}",
-        f"latency_ms={latency_ms}",
-        f"fallback_count={fallback_count}",
-    ])
+    parts.extend(
+        [
+            f"reason={reason}",
+            f"status={status}",
+            f"latency_ms={latency_ms}",
+            f"fallback_count={fallback_count}",
+        ]
+    )
     if fallback_count > 0:
         parts.append(f"fallback_from={fallback_from}")
     logger.info(" ".join(parts))
@@ -392,7 +394,9 @@ async def _record_usage_event(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
-        estimated_cost_usd=estimate_cost_usd(served_model, prompt_tokens, completion_tokens, app.state.route_config.model_prices),
+        estimated_cost_usd=estimate_cost_usd(
+            served_model, prompt_tokens, completion_tokens, app.state.route_config.model_prices
+        ),
         cache_status=_cache_status(cache_hit),
         fallback_count=fallback_count,
         fallback_from=fallback_from if fallback_count > 0 else None,

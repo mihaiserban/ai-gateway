@@ -21,7 +21,12 @@ async def test_chat_stream_passthrough_forwards_chunks(simple_route_config_path:
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -52,7 +57,12 @@ async def test_chat_stream_sets_gateway_headers(simple_route_config_path: str):
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -81,7 +91,12 @@ async def test_chat_stream_writes_session_after_200(simple_route_config_path: st
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         await client.post(
@@ -116,7 +131,12 @@ async def test_chat_stream_fallback_before_stream_starts(simple_route_config_pat
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(

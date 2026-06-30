@@ -3,11 +3,7 @@ from router.routing import RouteConfig, choose_model, next_fallback
 
 def test_defaults_to_default_model_without_inspecting_content():
     config = RouteConfig(cache_ttl_seconds=600, allowed_models={"explorer", "coder"}, default_model="explorer")
-    request = {
-        "messages": [
-            {"role": "user", "content": "please refactor src/app.py and explain the root cause"}
-        ]
-    }
+    request = {"messages": [{"role": "user", "content": "please refactor src/app.py and explain the root cause"}]}
 
     decision = choose_model(request, session=None, now=1_000.0, config=config)
 

@@ -28,18 +28,14 @@ class ProviderModelLogger:
     """LiteLLM callback logger that emits the resolved provider/model per request."""
 
     @staticmethod
-    async def async_post_call_success_hook(
-        user_api_key_dict: Any, response: Any, **kwargs: Any
-    ) -> None:
+    async def async_post_call_success_hook(user_api_key_dict: Any, response: Any, **kwargs: Any) -> None:
         provider_model = _resolved_provider_model(response)
         if provider_model is None:
             return
         logger.info("provider_model=%s status=success", provider_model)
 
     @staticmethod
-    async def async_post_call_failure_hook(
-        user_api_key_dict: Any, original_exception: Any, **kwargs: Any
-    ) -> None:
+    async def async_post_call_failure_hook(user_api_key_dict: Any, original_exception: Any, **kwargs: Any) -> None:
         # Failure hooks don't always receive the resolved response, so we try to
         # surface what we can without logging the exception details.
         provider_model = _resolved_provider_model(original_exception)

@@ -27,16 +27,11 @@ def test_render_router_config_from_gateway_config():
     assert router_config["retry_max_delay"] == 2.0
     assert router_config["default_model"] == config["router"]["default_model"]
     assert router_config["allowed_models"] == [entry["name"] for entry in entries]
-    assert router_config["fallbacks"] == {
-        entry["name"]: list(entry.get("fallbacks") or []) for entry in entries
-    }
-    assert router_config["timeouts"] == {
-        entry["name"]: entry.get("timeout", 120) for entry in entries
-    }
+    assert router_config["fallbacks"] == {entry["name"]: list(entry.get("fallbacks") or []) for entry in entries}
+    assert router_config["timeouts"] == {entry["name"]: entry.get("timeout", 120) for entry in entries}
     assert router_config["cache_key_aliases"] == []
     assert router_config["provider_models"] == {
-        entry["name"]: _resolve_entry(entry, {e["name"]: e for e in entries})["litellm_model"]
-        for entry in entries
+        entry["name"]: _resolve_entry(entry, {e["name"]: e for e in entries})["litellm_model"] for entry in entries
     }
 
 

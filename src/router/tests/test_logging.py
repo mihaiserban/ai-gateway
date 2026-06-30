@@ -17,7 +17,12 @@ async def test_chat_logs_request_metadata(caplog, simple_route_config_path: str)
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -55,7 +60,12 @@ async def test_chat_logs_fallback_from_when_fallback_occurred(caplog, simple_rou
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -85,7 +95,12 @@ async def test_chat_log_omits_raw_token(caplog, simple_route_config_path: str):
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -109,7 +124,12 @@ async def test_chat_log_omits_prompt_content(caplog, simple_route_config_path: s
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -130,7 +150,12 @@ async def test_chat_log_on_error_path_logs_error_status(caplog, simple_route_con
         raise httpx.TimeoutException("request timed out")
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -157,7 +182,12 @@ async def test_chat_log_on_upstream_error_status_logs_status(caplog, simple_rout
         return httpx.Response(503, json={"error": "unavailable"})
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -186,7 +216,12 @@ async def test_chat_stream_logs_request_metadata(caplog, simple_route_config_pat
         )
 
     transport = httpx.MockTransport(handler)
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport, config_path=simple_route_config_path)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=simple_route_config_path,
+    )
 
     with caplog.at_level(logging.INFO, logger="router"):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
