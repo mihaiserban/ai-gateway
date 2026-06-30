@@ -5,6 +5,9 @@
 
 *.log
 *.tmp
+__pycache__/
+*.pyc
+.pytest_cache/
 
 postgres_data/
 redis_data/
