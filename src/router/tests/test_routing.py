@@ -83,3 +83,30 @@ def test_next_fallback_returns_next_alias():
     assert next_fallback("deepseek-pro", 0, config) == "opencodego-code"
     assert next_fallback("deepseek-pro", 1, config) == "fast"
     assert next_fallback("deepseek-pro", 2, config) is None
+
+
+def test_choose_model_uses_configured_classifier_keywords():
+    config = RouteConfig(
+        allowed_models={"fast", "opencodego-fast"},
+        classifier_keywords={
+            "code_signals": ["frobnicate"],
+            "reasoning_signals": [],
+        },
+    )
+    request = {"messages": [{"role": "user", "content": "please frobnicate the widget"}]}
+
+    decision = choose_model(request, session=None, now=1_000.0, config=config)
+
+    assert decision.model == "opencodego-fast"
+    assert decision.reason == "classified"
+
+
+def test_choose_model_falls_back_to_default_signals_when_keywords_empty():
+    config = RouteConfig(allowed_models={"fast", "opencodego-fast"})
+    request = {
+        "messages": [{"role": "user", "content": "please refactor src/app.py"}]
+    }
+
+    decision = choose_model(request, session=None, now=1_000.0, config=config)
+
+    assert decision.model == "opencodego-fast"

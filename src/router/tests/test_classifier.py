@@ -47,3 +47,23 @@ def test_plain_request_routes_to_fast():
     request = {"messages": [{"role": "user", "content": "say hello"}]}
 
     assert classify_request(request) == "fast"
+
+
+def test_custom_code_signals_override_defaults():
+    request = {"messages": [{"role": "user", "content": "please frobnicate the widget"}]}
+
+    # Default signals -> fast (no code signal).
+    assert classify_request(request) == "fast"
+
+    # Custom code signal -> opencodego-fast.
+    result = classify_request(request, code_signals=("frobnicate",))
+    assert result == "opencodego-fast"
+
+
+def test_custom_reasoning_signals_override_defaults():
+    request = {"messages": [{"role": "user", "content": "tell me about the cosmos"}]}
+
+    assert classify_request(request) == "fast"
+
+    result = classify_request(request, reasoning_signals=("cosmos",))
+    assert result == "deepseek-pro"

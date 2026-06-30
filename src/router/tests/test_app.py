@@ -378,3 +378,36 @@ async def test_unsupported_v1_path_returns_501():
         response = await client.post("/v1/responses", json={})
 
     assert response.status_code == 501
+
+
+def test_create_app_loads_route_config_from_file(tmp_path):
+    cfg_path = tmp_path / "router_config.yaml"
+    cfg_path.write_text(
+        """
+cache_ttl_seconds: 42
+allowed_models:
+  - fast
+fallbacks:
+  fast: []
+""",
+    )
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        config_path=str(cfg_path),
+        litellm_config_path=str(tmp_path / "missing-litellm.yaml"),
+    )
+    assert app.state.route_config.cache_ttl_seconds == 42
+    assert app.state.route_config.allowed_models == {"fast"}
+
+
+def test_create_app_defaults_when_no_config_file(monkeypatch, tmp_path):
+    # Point ROUTER_CONFIG_PATH at a missing file so we get defaults.
+    missing = tmp_path / "no-router.yaml"
+    monkeypatch.setenv("ROUTER_CONFIG_PATH", str(missing))
+    monkeypatch.setenv("LITELLM_CONFIG_PATH", str(tmp_path / "no-litellm.yaml"))
+
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None)
+
+    assert app.state.route_config.cache_ttl_seconds == 600
+    assert "fast" in app.state.route_config.allowed_models
