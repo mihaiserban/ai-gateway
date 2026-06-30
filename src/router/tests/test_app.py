@@ -60,6 +60,21 @@ async def test_chat_rewrites_model_to_classified_alias():
 
 
 @pytest.mark.asyncio
+async def test_chat_returns_422_for_empty_body():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("empty request body should not be proxied")
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/v1/chat/completions")
+
+    assert response.status_code == 422
+    assert response.json() == {"error": "request body must be valid JSON"}
+
+
+@pytest.mark.asyncio
 async def test_chat_keeps_warm_session_model():
     seen_models = []
 

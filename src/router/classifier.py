@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 CODE_SIGNALS = (
-    " refactor",
-    " implement",
-    " stack trace",
-    " traceback",
-    " diff",
+    "refactor",
+    "implement",
+    "stack trace",
+    "traceback",
+    "diff",
     ".py",
     ".ts",
     ".tsx",
@@ -40,9 +41,9 @@ def classify_request(
         return "vision"
 
     text = _message_text(request.get("messages", [])).lower()
-    if any(signal in text for signal in code_signals):
+    if any(_contains_signal(text, signal) for signal in code_signals):
         return "opencodego-fast"
-    if any(signal in text for signal in reasoning_signals):
+    if any(_contains_signal(text, signal) for signal in reasoning_signals):
         return "deepseek-pro"
     return "fast"
 
@@ -78,3 +79,12 @@ def _message_text(messages: Any) -> str:
                     if isinstance(text, str):
                         parts.append(text)
     return "\n".join(parts)
+
+
+def _contains_signal(text: str, signal: str) -> bool:
+    signal = signal.strip().lower()
+    if not signal:
+        return False
+    if signal[0].isalnum() and signal[-1].isalnum():
+        return re.search(rf"(?<!\w){re.escape(signal)}(?!\w)", text) is not None
+    return signal in text

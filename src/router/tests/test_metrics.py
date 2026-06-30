@@ -103,6 +103,29 @@ async def test_metrics_counts_cache_hit_miss_and_unknown():
 
 
 @pytest.mark.asyncio
+async def test_metrics_counts_cache_key_without_hit_header_as_miss():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}]},
+            headers={"x-litellm-cache-key": "cache-key"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=transport)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "cache-key-miss"},
+            json={"messages": [{"role": "user", "content": "say hello"}]},
+        )
+
+    payload = app.state.metrics.snapshot()
+    assert payload["cache_counts"] == {"hit": 0, "miss": 1, "unknown": 0}
+
+
+@pytest.mark.asyncio
 async def test_metrics_tracks_availability_for_each_upstream_attempt():
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]

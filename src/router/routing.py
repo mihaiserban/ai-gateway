@@ -56,8 +56,10 @@ def choose_model(
     config: RouteConfig,
 ) -> RouteDecision:
     explicit_model = request.get("model")
-    if isinstance(explicit_model, str) and explicit_model in config.allowed_models:
-        return RouteDecision(model=explicit_model, reason="explicit-model")
+    if isinstance(explicit_model, str):
+        normalized_model = explicit_model.lower()
+        if normalized_model in config.allowed_models:
+            return RouteDecision(model=normalized_model, reason="explicit-model")
 
     if session and _is_warm(session, now, config.cache_ttl_seconds):
         session_model = session.get("model")

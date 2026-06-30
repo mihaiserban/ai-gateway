@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import time
@@ -77,7 +78,12 @@ def create_app(
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
         start = time.perf_counter()
-        body = await request.json()
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse(status_code=422, content={"error": "request body must be valid JSON"})
+        if not isinstance(body, dict):
+            return JSONResponse(status_code=422, content={"error": "request body must be a JSON object"})
         token = request.headers.get("authorization")
         session_id = request.headers.get("X-Session-Id") or _fallback_session_id(body, token)
         session = await app.state.session_store.get(session_id)
@@ -295,6 +301,8 @@ def _exception_status(exc: Exception) -> str:
 def _cache_hit(upstream: httpx.Response) -> bool | None:
     value = upstream.headers.get("x-litellm-cache-hit")
     if value is None:
+        if upstream.headers.get("x-litellm-cache-key") is not None:
+            return False
         return None
     return value.lower() in {"1", "true", "yes"}
 

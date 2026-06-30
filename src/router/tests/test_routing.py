@@ -64,6 +64,19 @@ def test_honors_allowed_explicit_model():
     assert decision.reason == "explicit-model"
 
 
+def test_honors_explicit_model_case_insensitively():
+    config = RouteConfig(cache_ttl_seconds=600, allowed_models={"fast", "deepseek-pro"})
+    request = {
+        "model": "DEEPSEEK-PRO",
+        "messages": [{"role": "user", "content": "say hello"}],
+    }
+
+    decision = choose_model(request, session=None, now=1_000.0, config=config)
+
+    assert decision.model == "deepseek-pro"
+    assert decision.reason == "explicit-model"
+
+
 def test_ignores_unknown_explicit_model():
     config = RouteConfig(cache_ttl_seconds=600, allowed_models={"fast"})
     request = {

@@ -30,6 +30,18 @@ def test_code_request_routes_to_opencodego_fast():
     assert classify_request(request) == "opencodego-fast"
 
 
+def test_first_word_code_signal_routes_to_opencodego_fast():
+    request = {"messages": [{"role": "user", "content": "implement a sort function"}]}
+
+    assert classify_request(request) == "opencodego-fast"
+
+
+def test_code_signal_uses_word_boundaries():
+    request = {"messages": [{"role": "user", "content": "what is the implementation timeline?"}]}
+
+    assert classify_request(request) == "fast"
+
+
 def test_analysis_request_routes_to_deepseek_pro():
     request = {
         "messages": [

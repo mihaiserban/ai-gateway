@@ -17,3 +17,15 @@ async def test_memory_session_store_returns_none_for_missing_session():
     store = MemorySessionStore()
 
     assert await store.get("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_memory_session_store_expires_sessions_after_ttl():
+    now = 1_000.0
+    store = MemorySessionStore(clock=lambda: now)
+
+    await store.set("abc", {"model": "fast"}, ttl_seconds=10)
+
+    now = 1_011.0
+
+    assert await store.get("abc") is None
