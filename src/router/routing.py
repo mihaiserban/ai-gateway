@@ -23,6 +23,9 @@ DEFAULT_FALLBACKS = {
 }
 
 
+DEFAULT_TIMEOUT_SECONDS = 120
+
+
 @dataclass(frozen=True)
 class RouteConfig:
     cache_ttl_seconds: int = 600
@@ -30,12 +33,19 @@ class RouteConfig:
     fallbacks: dict[str, list[str]] = field(default_factory=lambda: dict(DEFAULT_FALLBACKS))
     timeouts: dict[str, int] = field(default_factory=dict)
     classifier_keywords: dict[str, list[str]] = field(default_factory=dict)
+    retry_base_delay: float = 0.2
+    retry_max_delay: float = 2.0
 
 
 @dataclass(frozen=True)
 class RouteDecision:
     model: str
     reason: str
+
+
+def _timeout_for(config: RouteConfig, model: str) -> int:
+    """Return the per-alias timeout, falling back to the default when unset."""
+    return config.timeouts.get(model, DEFAULT_TIMEOUT_SECONDS)
 
 
 def choose_model(

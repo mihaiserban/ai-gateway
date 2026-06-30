@@ -47,6 +47,8 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         "code_signals": list(keywords.get("code_signals") or []),
         "reasoning_signals": list(keywords.get("reasoning_signals") or []),
     }
+    retry_base_delay = float(data.get("retry_base_delay", 0.2))
+    retry_max_delay = float(data.get("retry_max_delay", 2.0))
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
@@ -54,6 +56,8 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         fallbacks=fallbacks,
         timeouts=timeouts,
         classifier_keywords=classifier_keywords,
+        retry_base_delay=retry_base_delay,
+        retry_max_delay=retry_max_delay,
     )
 
 

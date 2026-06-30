@@ -5,6 +5,9 @@
 
 cache_ttl_seconds: 600
 
+retry_base_delay: 0.2
+retry_max_delay: 2.0
+
 allowed_models:
   - fast
   - deepseek-pro
