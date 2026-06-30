@@ -34,18 +34,18 @@ turn it into a NAS-ready personal v1.
 
 ## P0: Correctness And Safety
 
-- [ ] Move session writes after successful upstream response, or mark failed
+- [x] Move session writes after successful upstream response, or mark failed
       sessions separately.
-- [ ] Implement router-level fallback retry for selected error classes: `429`,
+- [x] Implement router-level fallback retry for selected error classes: `429`,
       `500`, `502`, `503`, `504`, timeout errors, and network errors.
-- [ ] Do not retry auth/client errors: `400`, `401`, `403`, and most `404`.
-- [ ] Add tests proving a failed first model retries the next fallback.
-- [ ] Add tests proving a failed upstream request does not poison sticky session
+- [x] Do not retry auth/client errors: `400`, `401`, `403`, and most `404`.
+- [x] Add tests proving a failed first model retries the next fallback.
+- [x] Add tests proving a failed upstream request does not poison sticky session
       state.
-- [ ] Replace Python `hash()` fallback session IDs with stable SHA-256.
-- [ ] Include caller key fingerprint in fallback session IDs without storing raw
+- [x] Replace Python `hash()` fallback session IDs with stable SHA-256.
+- [x] Include caller key fingerprint in fallback session IDs without storing raw
       bearer tokens.
-- [ ] Make `vision` unavailable until an actual vision alias exists, or add a
+- [x] Make `vision` unavailable until an actual vision alias exists, or add a
       working vision alias.
 
 ## P1: Reliability V1
