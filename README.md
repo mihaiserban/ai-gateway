@@ -174,20 +174,26 @@ Default public aliases:
 | Alias level | Examples | Intended use |
 | --- | --- | --- |
 | Task aliases | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | Default interface for agents and orchestrators. |
-| Model-family aliases | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | Caller wants a model family but lets the gateway choose the provider. |
-| Provider deployment aliases | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | Debugging, forced provider selection, and package-specific routing. |
+| Model-family aliases | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | Caller wants an exact model family and allows provider fallback. |
+| Provider deployment aliases | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | Caller wants to force one provider with no gateway fallback. |
 
 The recommended default for package and orchestrator setup is to use task
 aliases first. For example, an orchestrator should map planning to `planner`,
 building to `coder`, quick edits to `coder-fast`, and search/simple work to
-`explorer`. Packages that need a specific model family can request a
-model-family alias such as `deepseek-v4-pro`. Provider deployment aliases are
-available as an escape hatch, but they should not be the default integration
-surface.
+`explorer`. Packages that need direct model selection can request an exact
+model-family alias such as `deepseek-v4-pro`, `deepseek-v4-flash`,
+`kimi-k2.7-code`, or `kimi-k2.6`. Provider deployment aliases are available as
+an escape hatch when a caller needs to force one backend.
+
+The selection rule is: choose a task alias when you know the job, choose a
+model-family alias when you know the model and want provider fallback, and
+choose a provider deployment alias only when debugging or forcing one backend.
 
 Fallback chains live in `src/gateway.config.yaml` and are generated into the
-router and LiteLLM runtime configs. They prefer the same model family on another
-provider before moving to a neighboring task role.
+router and LiteLLM runtime configs. Task aliases target the preferred exact
+model-family alias, but their fallback chains use concrete alternate provider
+deployments so a provider outage does not immediately route back to the same
+provider.
 
 The catalog also records `reasoning_level` as guidance for humans and packages:
 `low`, `medium`, or `high`. This field does not rewrite request parameters.

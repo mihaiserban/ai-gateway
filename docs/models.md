@@ -17,8 +17,8 @@ The gateway exposes three levels of aliases:
 | Level | Examples | Use when |
 | --- | --- | --- |
 | Task alias | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | A tool or orchestrator wants the gateway's recommended default for a job. |
-| Model-family alias | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | A caller wants a specific model family but not a specific provider. |
-| Provider deployment alias | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | A caller needs to force or debug one provider deployment. |
+| Model-family alias | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | A caller wants an exact model family with provider fallback. |
+| Provider deployment alias | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | A caller needs to force or debug one provider deployment with no fallback. |
 
 `model_info.reasoning_level` is catalog metadata with values `none`, `low`,
 `medium`, or `high`. It is not translated into provider-specific request
@@ -149,15 +149,15 @@ adds `additional_drop_params: [reasoningSummary]` for the aliases that need it.
 | `kimi-k2.6-ollama` | provider-deployment | low | `ollama_chat/kimi-k2.6` | 60 | — |
 | `kimi-k2.6-opencodego` | provider-deployment | low | `openai/kimi-k2.6` | 120 | — |
 | `deepseek-v4-flash` | model-family | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego` |
-| `glm-5.2` | model-family | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `kimi-k2.7-code` |
-| `kimi-k2.7-code` | model-family | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro` |
+| `glm-5.2` | model-family | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `kimi-k2.7-code-opencodego` |
+| `kimi-k2.7-code` | model-family | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro-deepseek` |
 | `deepseek-v4-pro` | model-family | high | `ollama_chat/deepseek-v4-pro` | 120 | `deepseek-v4-pro-deepseek` |
 | `kimi-k2.6` | model-family | low | `ollama_chat/kimi-k2.6` | 60 | `kimi-k2.6-opencodego` |
 | `explorer` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego` |
-| `planner` | task-alias | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `kimi-k2.7-code` |
-| `coder` | task-alias | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro`, `deepseek-v4-pro-deepseek` |
-| `coder-fast` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `kimi-k2.6`, `coder` |
-| `vision` | task-alias | medium | `ollama_chat/kimi-k2.6` | 120 | `kimi-k2.6-opencodego`, `coder` |
+| `planner` | task-alias | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` |
+| `coder` | task-alias | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro-deepseek` |
+| `coder-fast` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego`, `kimi-k2.6-opencodego` |
+| `vision` | task-alias | medium | `ollama_chat/kimi-k2.6` | 120 | `kimi-k2.6-opencodego` |
 
 ## Fallback chains
 
@@ -168,21 +168,21 @@ explorer
 
 planner
   -> glm-5.2-opencodego
-  -> kimi-k2.7-code
+  -> deepseek-v4-pro-deepseek
+  -> kimi-k2.7-code-opencodego
 
 coder
   -> kimi-k2.7-code-opencodego
-  -> deepseek-v4-pro
   -> deepseek-v4-pro-deepseek
 
 coder-fast
   -> deepseek-v4-flash-deepseek
-  -> kimi-k2.6
-  -> coder
+  -> deepseek-v4-flash-opencodego
+  -> kimi-k2.6-opencodego
 
 vision
   -> kimi-k2.6-opencodego
-  -> coder
+
 ```
 
 ## Runtime configuration

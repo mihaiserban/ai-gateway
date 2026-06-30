@@ -260,10 +260,10 @@ router_settings:
     - deepseek-v4-flash-opencodego
   - glm-5.2:
     - glm-5.2-opencodego
-    - kimi-k2.7-code
+    - kimi-k2.7-code-opencodego
   - kimi-k2.7-code:
     - kimi-k2.7-code-opencodego
-    - deepseek-v4-pro
+    - deepseek-v4-pro-deepseek
   - deepseek-v4-pro:
     - deepseek-v4-pro-deepseek
   - kimi-k2.6:
@@ -273,15 +273,14 @@ router_settings:
     - deepseek-v4-flash-opencodego
   - planner:
     - glm-5.2-opencodego
-    - kimi-k2.7-code
+    - deepseek-v4-pro-deepseek
+    - kimi-k2.7-code-opencodego
   - coder:
     - kimi-k2.7-code-opencodego
-    - deepseek-v4-pro
     - deepseek-v4-pro-deepseek
   - coder-fast:
     - deepseek-v4-flash-deepseek
-    - kimi-k2.6
-    - coder
+    - deepseek-v4-flash-opencodego
+    - kimi-k2.6-opencodego
   - vision:
     - kimi-k2.6-opencodego
-    - coder

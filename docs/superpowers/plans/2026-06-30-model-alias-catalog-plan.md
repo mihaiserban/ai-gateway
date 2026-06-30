@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Evolve the gateway from provider-specific role aliases into a three-layer model catalog: role aliases, model-family aliases, and provider deployment aliases.
+**Goal:** Evolve the gateway from provider-specific role aliases into a curated model catalog: task aliases, exact model-family aliases, and provider deployment aliases.
 
-**Architecture:** Keep provider deployments as concrete LiteLLM-backed entries. Add generated aliases for roles and model families that copy a concrete target's LiteLLM parameters while retaining their own public name, timeout, metadata, and fallback chain. Continue generating both `src/router/router_config.yaml` and `src/litellm.config.yaml` from `src/gateway.config.yaml`.
+**Architecture:** Keep provider deployments as concrete LiteLLM-backed entries. Add generated aliases for tasks and exact model families that copy a concrete target's LiteLLM parameters while retaining their own public name, timeout, metadata, and fallback chain. Continue generating both `src/router/router_config.yaml` and `src/litellm.config.yaml` from `src/gateway.config.yaml`.
 
 **Tech Stack:** Python 3.12, PyYAML, FastAPI router config, LiteLLM proxy YAML, pytest.
 
@@ -13,13 +13,16 @@
 - `src/gateway.config.yaml` remains the only human-edited runtime configuration file.
 - `python3 src/scripts/generate_configs.py` must regenerate `src/router/router_config.yaml` and `src/litellm.config.yaml`.
 - Provider deployments are regular `models` entries with `litellm_model` and provider environment fields.
-- Role and model-family aliases are `aliases` entries with `name`, `target`, optional `fallbacks`, optional `timeout`, and optional `model_info`.
+- Task and model-family aliases are `aliases` entries with `name`, `target`, optional `fallbacks`, optional `timeout`, and optional `model_info`.
 - Aliases resolve recursively to a concrete provider deployment for LiteLLM rendering.
 - Alias cycles fail config validation before any generated file is written.
-- Fallback targets may name provider deployments, model-family aliases, or role aliases, but every target must be a defined entry.
+- Fallback targets may name provider deployments, model-family aliases, or task aliases, but every target must be a defined entry.
+- Task aliases should target exact model-family aliases and should name concrete alternate provider deployments or exact families that resolve away from the task's primary provider. This avoids falling back from a failed Ollama-backed task alias into a broad alias that immediately resolves to Ollama again.
+- Exact model-family aliases are first-class direct-selection aliases with provider fallback. For example, `model: deepseek-v4-pro` means "use DeepSeek V4 Pro and let the gateway choose/fallback provider."
+- Provider deployment aliases force one backend and have no fallbacks. For example, `model: deepseek-v4-pro-deepseek` means "use the DeepSeek-hosted deployment only."
 - `model_info.reasoning_level` is catalog metadata only in this implementation and must be one of `none`, `low`, `medium`, or `high`.
 - Do not rewrite request bodies to add provider-specific reasoning parameters in this implementation; OpenAI-style, Anthropic-style, DeepSeek, Ollama, and OpenCode Go reasoning controls are not one shared contract.
-- Do not expose the full provider catalog as routable aliases; only expose curated entries in `src/gateway.config.yaml`.
+- Do not expose the full provider catalog as routable aliases; expose curated task aliases, curated exact model-family aliases such as `glm-5.2` and `deepseek-v4-pro`, and selected provider deployment aliases in `src/gateway.config.yaml`.
 - After implementation, invoke `ponytail-review` on the resulting diff and apply simplification suggestions that do not conflict with these requirements.
 
 ---
@@ -27,12 +30,12 @@
 ## File Structure
 
 - Modify `src/scripts/generate_configs.py`: add alias parsing, recursive target resolution, alias validation, and rendering of aliases into both runtime configs.
-- Modify `src/gateway.config.yaml`: split current aliases into concrete provider deployments plus public role and model-family aliases.
+- Modify `src/gateway.config.yaml`: split current aliases into concrete provider deployments plus public task and exact model-family aliases.
 - Regenerate `src/router/router_config.yaml`: generated router config should include all curated public aliases and provider deployments.
 - Regenerate `src/litellm.config.yaml`: generated LiteLLM config should include a concrete model entry for every routable alias.
 - Modify `src/router/tests/test_gateway_config_generator.py`: cover alias rendering, validation errors, and committed generated config parity.
 - Modify `README.md`: replace stale default alias table and fallback chains with the new role/family/provider model contract.
-- Modify `docs/models.md`: document the three-layer catalog and the active curated aliases.
+- Modify `docs/models.md`: document the curated catalog levels and the active aliases.
 
 ---
 
@@ -116,6 +119,7 @@ def test_alias_entries_render_to_router_and_litellm_configs():
         "coder",
     ]
     assert router_config["fallbacks"]["deepseek-v4-pro"] == ["deepseek-v4-pro-deepseek"]
+    assert router_config["fallbacks"]["deepseek-v4-pro-deepseek"] == []
     assert router_config["fallbacks"]["coder"] == ["deepseek-v4-pro-deepseek"]
     assert router_config["provider_models"]["coder"] == "ollama_chat/deepseek-v4-pro"
 
@@ -453,7 +457,7 @@ git commit -m "feat(config): support generated model aliases"
 
 **Interfaces:**
 - Consumes: Alias support from Task 1.
-- Produces: Curated aliases `explorer`, `planner`, `coder`, `coder-fast`, `vision`, `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, and `kimi-k2.6`, each with catalog-only `model_info.reasoning_level`.
+- Produces: Curated task aliases `explorer`, `planner`, `coder`, `coder-fast`, and `vision`; exact model-family aliases `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, and `kimi-k2.6`; each with catalog-only `model_info.reasoning_level`.
 
 - [ ] **Step 1: Replace the `models:` section with provider deployments**
 
@@ -633,7 +637,7 @@ aliases:
     timeout: 120
     fallbacks:
       - glm-5.2-opencodego
-      - kimi-k2.7-code
+      - kimi-k2.7-code-opencodego
     model_info:
       role: model-family
       family: glm-5.2
@@ -644,7 +648,7 @@ aliases:
     timeout: 120
     fallbacks:
       - kimi-k2.7-code-opencodego
-      - deepseek-v4-pro
+      - deepseek-v4-pro-deepseek
     model_info:
       role: model-family
       family: kimi-k2.7-code
@@ -686,7 +690,8 @@ aliases:
     timeout: 120
     fallbacks:
       - glm-5.2-opencodego
-      - kimi-k2.7-code
+      - deepseek-v4-pro-deepseek
+      - kimi-k2.7-code-opencodego
     model_info:
       role: task-alias
       task: plan
@@ -697,7 +702,6 @@ aliases:
     timeout: 120
     fallbacks:
       - kimi-k2.7-code-opencodego
-      - deepseek-v4-pro
       - deepseek-v4-pro-deepseek
     model_info:
       role: task-alias
@@ -709,8 +713,8 @@ aliases:
     timeout: 60
     fallbacks:
       - deepseek-v4-flash-deepseek
-      - kimi-k2.6
-      - coder
+      - deepseek-v4-flash-opencodego
+      - kimi-k2.6-opencodego
     model_info:
       role: task-alias
       task: quick-build
@@ -721,7 +725,6 @@ aliases:
     timeout: 120
     fallbacks:
       - kimi-k2.6-opencodego
-      - coder
     model_info:
       role: task-alias
       task: vision
@@ -759,7 +762,7 @@ Expected output:
 ```text
 coder
 ['deepseek-v4-flash-ollama', 'deepseek-v4-flash-deepseek', 'deepseek-v4-flash-opencodego', 'glm-5.2-ollama', 'glm-5.2-opencodego', 'kimi-k2.7-code-ollama', 'kimi-k2.7-code-opencodego', 'deepseek-v4-pro-ollama', 'deepseek-v4-pro-deepseek', 'kimi-k2.6-ollama', 'kimi-k2.6-opencodego', 'deepseek-v4-flash', 'glm-5.2', 'kimi-k2.7-code', 'deepseek-v4-pro', 'kimi-k2.6', 'explorer', 'planner', 'coder', 'coder-fast', 'vision']
-['kimi-k2.7-code-opencodego', 'deepseek-v4-pro', 'deepseek-v4-pro-deepseek']
+['kimi-k2.7-code-opencodego', 'deepseek-v4-pro-deepseek']
 ollama_chat/kimi-k2.7-code
 ```
 
@@ -777,7 +780,7 @@ Expected: pass, including `test_committed_generated_configs_match_gateway_config
 
 ```bash
 git add src/gateway.config.yaml src/router/router_config.yaml src/litellm.config.yaml src/router/tests/test_gateway_config_generator.py
-git commit -m "config: expose role and model-family aliases"
+git commit -m "config: expose task and model aliases"
 ```
 
 ---
@@ -802,20 +805,26 @@ Default public aliases:
 | Alias level | Examples | Intended use |
 | --- | --- | --- |
 | Task aliases | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | Default interface for agents and orchestrators. |
-| Model-family aliases | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | Caller wants a model family but lets the gateway choose the provider. |
-| Provider deployment aliases | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | Debugging, forced provider selection, and package-specific routing. |
+| Model-family aliases | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | Caller wants an exact model family and allows provider fallback. |
+| Provider deployment aliases | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | Caller wants to force one provider with no gateway fallback. |
 
 The recommended default for package and orchestrator setup is to use task
 aliases first. For example, an orchestrator should map planning to `planner`,
 building to `coder`, quick edits to `coder-fast`, and search/simple work to
-`explorer`. Packages that need a specific model family can request a
-model-family alias such as `deepseek-v4-pro`. Provider deployment aliases are
-available as an escape hatch, but they should not be the default integration
-surface.
+`explorer`. Packages that need direct model selection can request an exact
+model-family alias such as `deepseek-v4-pro`, `deepseek-v4-flash`,
+`kimi-k2.7-code`, or `kimi-k2.6`. Provider deployment aliases are available as
+an escape hatch when a caller needs to force one backend.
+
+The selection rule is: choose a task alias when you know the job, choose a
+model-family alias when you know the model and want provider fallback, and
+choose a provider deployment alias only when debugging or forcing one backend.
 
 Fallback chains live in `src/gateway.config.yaml` and are generated into the
-router and LiteLLM runtime configs. They prefer the same model family on another
-provider before moving to a neighboring task role.
+router and LiteLLM runtime configs. Task aliases target the preferred exact
+model-family alias, but their fallback chains use concrete alternate provider
+deployments so a provider outage does not immediately route back to the same
+provider.
 
 The catalog also records `reasoning_level` as guidance for humans and packages:
 `low`, `medium`, or `high`. This field does not rewrite request parameters.
@@ -833,8 +842,8 @@ The gateway exposes three levels of aliases:
 | Level | Examples | Use when |
 | --- | --- | --- |
 | Task alias | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | A tool or orchestrator wants the gateway's recommended default for a job. |
-| Model-family alias | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | A caller wants a specific model family but not a specific provider. |
-| Provider deployment alias | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | A caller needs to force or debug one provider deployment. |
+| Model-family alias | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | A caller wants an exact model family with provider fallback. |
+| Provider deployment alias | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | A caller needs to force or debug one provider deployment with no fallback. |
 
 `model_info.reasoning_level` is catalog metadata with values `none`, `low`,
 `medium`, or `high`. It is not translated into provider-specific request
@@ -873,21 +882,21 @@ explorer
 
 planner
   -> glm-5.2-opencodego
-  -> kimi-k2.7-code
+  -> deepseek-v4-pro-deepseek
+  -> kimi-k2.7-code-opencodego
 
 coder
   -> kimi-k2.7-code-opencodego
-  -> deepseek-v4-pro
   -> deepseek-v4-pro-deepseek
 
 coder-fast
   -> deepseek-v4-flash-deepseek
-  -> kimi-k2.6
-  -> coder
+  -> deepseek-v4-flash-opencodego
+  -> kimi-k2.6-opencodego
 
 vision
   -> kimi-k2.6-opencodego
-  -> coder
+
 ```
 
 - [ ] **Step 5: Commit Task 3**
@@ -952,7 +961,7 @@ Expected: both commands exit with status 0.
 
 - [ ] **Step 5: Invoke ponytail-review on the diff**
 
-Use the `ponytail-review` skill on the implementation diff. Apply suggestions that remove indirection or duplication without weakening alias validation, generated config parity, or the public three-layer model contract.
+Use the `ponytail-review` skill on the implementation diff. Apply suggestions that remove indirection or duplication without weakening alias validation, generated config parity, or the public curated model contract.
 
 - [ ] **Step 6: Re-run verification after simplification**
 
@@ -983,6 +992,6 @@ If Step 5 and Step 6 changed no files, do not create an empty commit.
 
 ## Self-Review
 
-- Spec coverage: The plan covers alias schema, recursive target resolution, fallback validation, catalog-only reasoning levels, config migration, generated router and LiteLLM configs, docs, tests, and completion review.
+- Spec coverage: The plan covers task aliases, exact model-family aliases, provider deployment aliases, recursive target resolution, fallback validation, catalog-only reasoning levels, config migration, generated router and LiteLLM configs, docs, tests, and completion review.
 - Red-flag scan: No unresolved planning markers are present.
 - Type consistency: The plan uses `dict[str, Any]` consistently with the existing generator and preserves existing public generator function names.
