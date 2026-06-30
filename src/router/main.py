@@ -3,15 +3,15 @@ from __future__ import annotations
 import hashlib
 import os
 import time
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from router.config import load_and_validate
 from router.redaction import redact_payload
-from router.routing import RouteConfig, choose_model, next_fallback
+from router.routing import choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
 
 
@@ -53,6 +53,7 @@ def create_app(
         decision = choose_model(body, session=session, now=time.time(), config=app.state.route_config)
 
         upstream_body = redact_payload(body)
+        is_stream = bool(body.get("stream"))
 
         original_model = decision.model
         current_model = original_model
@@ -64,11 +65,10 @@ def create_app(
         while True:
             upstream_body["model"] = current_model
             try:
-                response = await _proxy_json(
-                    request,
-                    "/v1/chat/completions",
-                    upstream_body,
-                )
+                if is_stream:
+                    response = await _proxy_stream(request, "/v1/chat/completions", upstream_body)
+                else:
+                    response = await _proxy_json(request, "/v1/chat/completions", upstream_body)
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exception = exc
                 last_response = None
@@ -79,6 +79,8 @@ def create_app(
                     break
                 if not _is_retryable_status(response.status_code):
                     break
+                if is_stream:
+                    await response.aclose()
 
             next_model = next_fallback(original_model, attempt, app.state.route_config)
             if next_model is None or next_model in tried:
@@ -110,6 +112,8 @@ def create_app(
             extra_headers["X-Gateway-Fallback-From"] = original_model
 
         if last_response is not None:
+            if is_stream and _is_success(last_response):
+                return _streaming_response(last_response, extra_headers=extra_headers)
             return _response_from_upstream(last_response, extra_headers=extra_headers)
 
         raise last_exception if last_exception is not None else RuntimeError("upstream request failed")
@@ -135,6 +139,18 @@ def create_app(
         url = app.state.litellm_base_url + path
         async with httpx.AsyncClient(transport=app.state.transport, timeout=120) as client:
             return await client.post(url, headers=_forward_headers(request), json=body)
+
+    async def _proxy_stream(
+        request: Request,
+        path: str,
+        body: dict[str, Any],
+    ) -> httpx.Response:
+        url = app.state.litellm_base_url + path
+        client = httpx.AsyncClient(transport=app.state.transport, timeout=120)
+        return await client.send(
+            client.build_request("POST", url, headers=_forward_headers(request), json=body),
+            stream=True,
+        )
 
     return app
 
@@ -165,6 +181,28 @@ def _response_from_upstream(
         status_code=upstream.status_code,
         media_type=content_type,
         headers=extra_headers,
+    )
+
+
+def _streaming_response(
+    upstream: httpx.Response,
+    extra_headers: dict[str, str] | None = None,
+) -> StreamingResponse:
+    content_type = upstream.headers.get("content-type", "text/event-stream")
+    headers = dict(extra_headers or {})
+    headers["content-type"] = content_type
+
+    async def body_iterator() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(
+        content=body_iterator(),
+        status_code=upstream.status_code,
+        headers=headers,
     )
 
 
