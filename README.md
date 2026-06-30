@@ -31,8 +31,9 @@ Redis     -> LiteLLM cache state and router session stickiness
 Postgres  -> LiteLLM virtual keys, budgets, spend, and UI state
 ```
 
-Only the router publishes a host port by default: `4100`. LiteLLM, Postgres,
-and Redis stay internal to Docker.
+Only the router publishes a host port by default, and it is bound to
+`127.0.0.1:4100` so it is local to the Docker host. LiteLLM, Postgres, and
+Redis stay internal to Docker.
 
 ## Repository Layout
 
@@ -94,6 +95,30 @@ Successful chat responses include gateway routing headers:
 
 LiteLLM cache headers such as `x-litellm-cache-hit` and
 `x-litellm-cache-key` are preserved when upstream returns them.
+
+## Persistent Usage Ledger
+
+The router emits prompt-free usage events to an internal `usage-ledger` service.
+Only the ledger service writes the gateway-owned `gateway_usage_events` table in
+the existing Postgres database. The router does not import a Postgres driver or
+write SQL directly.
+
+The ledger stores hashed key/session identifiers, model aliases, provider model,
+status, latency, token counts when upstream returns them, estimated cost when
+pricing is configured, cache status, and fallback metadata. It does not store
+prompt bodies, response bodies, raw bearer tokens, or raw session IDs.
+
+Inspect recent rows:
+
+```bash
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+select to_timestamp(timestamp), served_model, status, latency_ms,
+       total_tokens, estimated_cost_usd, cache_status, fallback_count
+from gateway_usage_events
+order by id desc
+limit 20;
+"
+```
 
 ## Routing Behavior
 
@@ -188,14 +213,16 @@ curl http://localhost:4100/healthz
 curl http://localhost:4100/readyz
 ```
 
-The agent base URL is:
+The local agent base URL on the Docker host is:
 
 ```text
-http://<host>:4100/v1
+http://127.0.0.1:4100/v1
 ```
 
-For remote access, prefer Tailscale or another private network. Do not expose
-port `4100` directly to the public internet.
+For remote access, put Tailscale, WireGuard, Cloudflare Tunnel with Access, or
+another authenticated private edge in front of the loopback listener. Do not
+bind port `4100` to all interfaces or expose it directly to the public
+internet.
 
 ## Create And Use Virtual Keys
 
@@ -229,10 +256,11 @@ Use the returned key as the agent API key.
 
 ## Client Usage
 
-OpenAI-compatible clients should point at the router and use a virtual key:
+OpenAI-compatible clients on the Docker host should point at the loopback
+router and use a virtual key:
 
 ```bash
-export OPENAI_BASE_URL=http://<host>:4100/v1
+export OPENAI_BASE_URL=http://127.0.0.1:4100/v1
 export OPENAI_API_KEY=<litellm-virtual-key>
 ```
 

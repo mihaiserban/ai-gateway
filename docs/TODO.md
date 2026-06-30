@@ -83,6 +83,7 @@ All findings from the initial MVP review have been addressed:
 - [x] Track per-alias upstream availability for future time-of-day routing.
 - [x] Add a daily spend summary command or runbook section.
 - [x] Add a lightweight log format that is easy to grep on the NAS.
+- [x] Add a prompt-free persistent usage ledger through an internal ledger service.
 
 ## P2: Caching
 
@@ -109,6 +110,7 @@ All findings from the initial MVP review have been addressed:
       useful patterns.
 - [ ] Provider optimization after at least one week of cost and latency data.
 - [ ] Portkey comparison spike only if LiteLLM becomes painful.
+- [ ] Add a small daily/monthly ledger summary command once enough rows exist.
 
 ## Recent Verification
 
