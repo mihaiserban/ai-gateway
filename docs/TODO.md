@@ -97,9 +97,9 @@ turn it into a NAS-ready personal v1.
 ## P2: Caching
 
 - [ ] Verify LiteLLM Redis cache hits through logs or API metadata.
-- [ ] Add cache-related response headers if available.
-- [ ] Add stable `prompt_cache_key` only for providers that support it.
-- [ ] Keep semantic caching out until basic cache metrics are proven.
+- [x] Add cache-related response headers if available.
+- [x] Add stable `prompt_cache_key` only for providers that support it.
+- [x] Keep semantic caching out until basic cache metrics are proven.
 
 ## P2: NAS-Ready
 
