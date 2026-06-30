@@ -83,6 +83,23 @@ The router intentionally implements a small OpenAI-compatible surface:
 | `/metrics` | `GET` | In-memory debug counters for routing, fallbacks, cache observations, and provider availability. |
 | `/v1/{anything-else}` | mixed | Returns HTTP `501` until explicitly implemented. |
 
+## Compatibility Contract
+
+The router is tested for OpenAI-compatible chat, streaming chat, and model
+discovery behavior. It forwards `Authorization`, JSON content type, and the
+request body to LiteLLM for supported paths. Unsupported `/v1/*` paths return
+HTTP `501` and are not proxied.
+
+| Client behavior | Path | Status |
+| --- | --- | --- |
+| Chat completions | `/v1/chat/completions` | Supported |
+| Streaming chat completions | `/v1/chat/completions` with `stream: true` | Supported |
+| Model discovery | `/v1/models` | Supported |
+| Responses API | `/v1/responses` | Explicit `501` |
+| Embeddings | `/v1/embeddings` | Explicit `501` |
+| Images | `/v1/images/*` | Explicit `501` |
+| Files | `/v1/files` | Explicit `501` |
+
 Successful chat responses include gateway routing headers:
 
 | Header | Meaning |
