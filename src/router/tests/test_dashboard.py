@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from router.dashboard import live_payload, parse_days
+from router.dashboard import UsageSummaryStore, live_payload, parse_days
 from router.metrics import Metrics
 from router.routing import RouteConfig
 
@@ -50,3 +50,112 @@ def test_live_payload_combines_health_metrics_and_config():
     assert payload["config"]["allowed_models"] == ["coder", "planner"]
     assert payload["config"]["fallbacks"] == {"coder": ["planner"], "planner": []}
     assert payload["config"]["provider_models"] == {"coder": "ollama_chat/kimi-k2.7-code"}
+
+
+class FakeCursor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+        self.results: list[list[dict[str, object]]] = [
+            [
+                {
+                    "requests": 4,
+                    "prompt_tokens": 30,
+                    "completion_tokens": 20,
+                    "total_tokens": 50,
+                    "estimated_cost_usd": 1.25,
+                    "avg_latency_ms": 125.0,
+                    "fallback_count": 2,
+                    "cache_hits": 1,
+                    "cache_misses": 2,
+                    "cache_unknown": 1,
+                }
+            ],
+            [
+                {
+                    "served_model": "coder",
+                    "requests": 3,
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "total_tokens": 30,
+                    "estimated_cost_usd": 1.0,
+                    "avg_latency_ms": 100.0,
+                }
+            ],
+            [
+                {
+                    "day": "2026-06-30",
+                    "requests": 4,
+                    "total_tokens": 50,
+                    "estimated_cost_usd": 1.25,
+                }
+            ],
+            [
+                {
+                    "key_hash": "abc123",
+                    "requests": 4,
+                    "total_tokens": 50,
+                    "estimated_cost_usd": 1.25,
+                }
+            ],
+            [
+                {
+                    "timestamp": 1782820800.0,
+                    "served_model": "coder",
+                    "provider_model": "ollama_chat/kimi-k2.7-code",
+                    "status": "503",
+                    "error_class": "http_503",
+                    "latency_ms": 250,
+                    "fallback_count": 1,
+                }
+            ],
+        ]
+
+    def execute(self, sql: str, params: tuple[object, ...]) -> None:
+        self.calls.append((sql, params))
+
+    def fetchall(self) -> list[dict[str, object]]:
+        return self.results.pop(0)
+
+
+class FakeConnection:
+    def __init__(self) -> None:
+        self.cursor_obj = FakeCursor()
+
+    def __enter__(self) -> "FakeConnection":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def cursor(self, *args, **kwargs) -> FakeCursor:
+        return self.cursor_obj
+
+
+def test_usage_summary_store_returns_empty_payload_without_database_url():
+    assert UsageSummaryStore(None).summary(30) == {
+        "enabled": False,
+        "period_days": 30,
+        "totals": {},
+        "top_models": [],
+        "daily_usage": [],
+        "top_keys": [],
+        "recent_failures": [],
+    }
+
+
+def test_usage_summary_store_reads_ledger_with_window_filter():
+    fake = FakeConnection()
+    store = UsageSummaryStore("postgresql://example", connect=lambda _: fake)
+
+    summary = store.summary(30)
+
+    assert summary["enabled"] is True
+    assert summary["period_days"] == 30
+    assert summary["totals"]["requests"] == 4
+    assert summary["top_models"][0]["served_model"] == "coder"
+    assert summary["daily_usage"][0]["day"] == "2026-06-30"
+    assert summary["top_keys"][0]["key_hash"] == "abc123"
+    assert summary["recent_failures"][0]["status"] == "503"
+    assert len(fake.cursor_obj.calls) == 5
+    for _, params in fake.cursor_obj.calls:
+        assert params == (30,)
