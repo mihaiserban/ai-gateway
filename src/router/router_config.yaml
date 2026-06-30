@@ -62,3 +62,6 @@ classifier_keywords:
     - "root cause"
     - "debug"
     - "explain"
+
+# providers that support prompt_cache_key: openai, deepseek, anthropic — not ollama
+cache_key_aliases: []

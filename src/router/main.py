@@ -80,6 +80,8 @@ def create_app(
         upstream_body = redact_payload(body)
         is_stream = bool(body.get("stream"))
 
+        cache_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+
         original_model = decision.model
         current_model = original_model
         last_response: httpx.Response | None = None
@@ -89,6 +91,10 @@ def create_app(
 
         while True:
             upstream_body["model"] = current_model
+            if current_model in app.state.route_config.cache_key_aliases:
+                upstream_body["prompt_cache_key"] = cache_key
+            elif "prompt_cache_key" in upstream_body:
+                del upstream_body["prompt_cache_key"]
             try:
                 if is_stream:
                     response = await _proxy_stream(request, "/v1/chat/completions", upstream_body, current_model)

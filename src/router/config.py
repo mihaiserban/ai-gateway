@@ -49,6 +49,7 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     }
     retry_base_delay = float(data.get("retry_base_delay", 0.2))
     retry_max_delay = float(data.get("retry_max_delay", 2.0))
+    cache_key_aliases = list(data.get("cache_key_aliases") or [])
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
@@ -58,6 +59,7 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         classifier_keywords=classifier_keywords,
         retry_base_delay=retry_base_delay,
         retry_max_delay=retry_max_delay,
+        cache_key_aliases=cache_key_aliases,
     )
 
 

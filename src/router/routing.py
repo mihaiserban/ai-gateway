@@ -35,6 +35,7 @@ class RouteConfig:
     classifier_keywords: dict[str, list[str]] = field(default_factory=dict)
     retry_base_delay: float = 0.2
     retry_max_delay: float = 2.0
+    cache_key_aliases: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
