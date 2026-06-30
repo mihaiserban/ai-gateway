@@ -128,6 +128,34 @@ curl http://localhost:4100/healthz   # liveness, always 200, per-dep status
 curl http://localhost:4100/readyz    # readiness, 503 if any dep is down
 ```
 
+Router metrics:
+
+```bash
+curl http://localhost:4100/metrics | python3 -m json.tool
+```
+
+The metrics endpoint is an in-memory debug view that resets when the router
+container restarts. It reports request totals, selected and served aliases,
+fallback count, LiteLLM cache counts (`hit`, `miss`, `unknown`), and
+per-alias upstream availability. Availability is keyed by LiteLLM alias and
+counts every upstream attempt, including failed attempts before a fallback:
+
+```json
+{
+  "provider_availability": {
+    "opencodego-fast": {
+      "attempts": 12,
+      "successes": 10,
+      "failures": 2,
+      "retryable_failures": 2,
+      "availability_percent": 83.33,
+      "last_status": 503,
+      "last_failure_ts": 1782820800.0
+    }
+  }
+}
+```
+
 ## Virtual Keys And Model Allowlists
 
 Agents should use LiteLLM virtual keys, not the master key. Create one key
@@ -232,6 +260,42 @@ cd /volume1/docker/ai-gateway
 docker compose pull
 docker compose up -d --build
 ```
+
+## Daily Spend Summary
+
+LiteLLM tracks spend when the proxy is backed by the configured database. For
+a one-day summary, run the report from inside the LiteLLM container so port
+`4000` stays internal:
+
+```bash
+cd /volume1/docker/ai-gateway
+
+docker compose exec -T litellm python3 - <<'PY'
+import datetime as dt
+import json
+import os
+import urllib.request
+
+today = dt.datetime.now(dt.timezone.utc).date()
+start = today - dt.timedelta(days=1)
+url = (
+    "http://localhost:4000/user/daily/activity"
+    f"?start_date={start.isoformat()}&end_date={today.isoformat()}"
+)
+request = urllib.request.Request(
+    url,
+    headers={"Authorization": f"Bearer {os.environ['LITELLM_MASTER_KEY']}"},
+)
+with urllib.request.urlopen(request, timeout=30) as response:
+    print(json.dumps(json.load(response), indent=2))
+PY
+```
+
+Use the LiteLLM admin UI only for manual inspection. The compose file does not
+publish LiteLLM port `4000`, so there is no always-on admin UI maintenance
+profile to protect. If the UI becomes necessary often enough, add a temporary
+Tailscale-only profile later; until then prefer admin API commands from inside
+the container.
 
 ## Backup And Restore
 

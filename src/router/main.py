@@ -107,9 +107,21 @@ def create_app(
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exception = exc
                 last_response = None
+                app.state.metrics.record_provider_attempt(
+                    current_model,
+                    _exception_status(exc),
+                    success=False,
+                    retryable_failure=True,
+                )
             else:
                 last_response = response
                 last_exception = None
+                app.state.metrics.record_provider_attempt(
+                    current_model,
+                    response.status_code,
+                    success=_is_success(response),
+                    retryable_failure=_is_retryable_status(response.status_code),
+                )
                 if _is_success(response):
                     break
                 if not _is_retryable_status(response.status_code):
@@ -168,7 +180,8 @@ def create_app(
             fallback_count,
             original_model,
         )
-        app.state.metrics.record(original_model, current_model, fallback_count)
+        cache_hit = _cache_hit(last_response) if last_response is not None else None
+        app.state.metrics.record(original_model, current_model, fallback_count, cache_hit=cache_hit)
 
         if last_response is not None:
             if is_stream and _is_success(last_response):
@@ -265,6 +278,23 @@ def _log_request(
 
 def _is_retryable_status(status_code: int) -> bool:
     return status_code in {429, 500, 502, 503, 504}
+
+
+def _exception_status(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.NetworkError):
+        return "network_error"
+    if isinstance(exc, httpx.RemoteProtocolError):
+        return "remote_protocol_error"
+    return "upstream_error"
+
+
+def _cache_hit(upstream: httpx.Response) -> bool | None:
+    value = upstream.headers.get("x-litellm-cache-hit")
+    if value is None:
+        return None
+    return value.lower() in {"1", "true", "yes"}
 
 
 def _forward_headers(request: Request) -> dict[str, str]:

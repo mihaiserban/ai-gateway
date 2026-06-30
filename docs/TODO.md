@@ -79,8 +79,9 @@ All findings from the initial MVP review have been addressed:
       Cloud aliases.
 - [x] Track selected model counts.
 - [x] Track fallback counts.
-- [ ] Track cache hit/miss when LiteLLM exposes it.
-- [ ] Add a daily spend summary command or runbook section.
+- [x] Track cache hit/miss when LiteLLM exposes it.
+- [x] Track per-alias upstream availability for future time-of-day routing.
+- [x] Add a daily spend summary command or runbook section.
 - [x] Add a lightweight log format that is easy to grep on the NAS.
 
 ## P2: Caching
@@ -97,13 +98,15 @@ All findings from the initial MVP review have been addressed:
 - [x] Add secret rotation runbook steps.
 - [x] Add a `.env` generation helper script.
 - [x] Document Tailscale-only exposure as the default deployment posture.
-- [ ] Decide whether LiteLLM admin UI needs a protected maintenance profile.
+- [x] Decide whether LiteLLM admin UI needs a protected maintenance profile.
 
 ## P3: Future
 
 - [ ] Copilot Pro spike with OAuth persistence.
 - [ ] Optional GitHub Models provider.
 - [ ] Optional Z.AI provider.
+- [ ] Persist hourly provider availability buckets once in-memory metrics show
+      useful patterns.
 - [ ] Provider optimization after at least one week of cost and latency data.
 - [ ] Portkey comparison spike only if LiteLLM becomes painful.
 
