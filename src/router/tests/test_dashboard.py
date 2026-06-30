@@ -2,7 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
+import httpx
+import pytest
+
 from router.dashboard import UsageSummaryStore, live_payload, parse_days
+from router.main import create_app
 from router.metrics import Metrics
 from router.routing import RouteConfig
 
@@ -159,3 +163,49 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
     assert len(fake.cursor_obj.calls) == 5
     for _, params in fake.cursor_obj.calls:
         assert params == (30,)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_html_route_returns_page():
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, database_url=None)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "AI Gateway" in response.text
+    assert "/dashboard/api/live" in response.text
+    assert "/dashboard/api/usage" in response.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_live_api_returns_json_shape():
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, database_url=None)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/dashboard/api/live")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"health", "readiness", "metrics", "config"}
+    assert payload["config"]["default_model"] == "coder"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_usage_api_defaults_to_30_days_when_ledger_disabled():
+    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, database_url=None)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/dashboard/api/usage?days=999")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False,
+        "period_days": 30,
+        "totals": {},
+        "top_models": [],
+        "daily_usage": [],
+        "top_keys": [],
+        "recent_failures": [],
+    }

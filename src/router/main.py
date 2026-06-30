@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from router.config import load_and_validate
+from router.dashboard import register_dashboard
 from router.health import all_ready, gather_health
 from router.metrics import Metrics
 from router.redaction import redact_payload
@@ -60,6 +61,7 @@ def create_app(
     app.state.metrics = Metrics()
     app.state.usage_sink = usage_sink or HttpUsageEventSink(os.environ.get("USAGE_LEDGER_URL"))
     app.state.async_sleep = asyncio.sleep
+    register_dashboard(app)
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
