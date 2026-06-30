@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from typing import Any
@@ -40,7 +41,8 @@ def create_app(
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
         body = await request.json()
-        session_id = request.headers.get("X-Session-Id") or _fallback_session_id(body)
+        token = request.headers.get("authorization")
+        session_id = request.headers.get("X-Session-Id") or _fallback_session_id(body, token)
         session = await app.state.session_store.get(session_id)
         decision = choose_model(body, session=session, now=time.time(), config=app.state.route_config)
 
@@ -113,14 +115,36 @@ def _response_from_upstream(
     )
 
 
-def _fallback_session_id(body: dict[str, Any]) -> str:
+def _fallback_session_id(body: dict[str, Any], token: str | None = None) -> str:
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:
         return "anonymous"
-    first = messages[0]
-    if not isinstance(first, dict):
+
+    system_text = ""
+    user_text = ""
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role == "system" and isinstance(content, str) and not system_text:
+            system_text = content
+        elif role == "user" and isinstance(content, str) and not user_text:
+            user_text = content
+        if system_text and user_text:
+            break
+
+    if not system_text and not user_text:
         return "anonymous"
-    return str(abs(hash(str(first.get("content", "")))))
+
+    token_fingerprint = ""
+    if isinstance(token, str):
+        token_fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    digest = hashlib.sha256(
+        f"{token_fingerprint}:{system_text}:{user_text}".encode("utf-8")
+    ).hexdigest()
+    return digest
 
 
 def _session_store(redis_url: str | None) -> SessionStore:
