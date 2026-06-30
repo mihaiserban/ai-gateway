@@ -13,7 +13,6 @@ allowed_models:
 - glm-5.2-opencodego
 - kimi-k2.7-code-ollama
 - kimi-k2.7-code-opencodego
-- deepseek-v4-pro-opencodego
 - deepseek-v4-pro-ollama
 - deepseek-v4-pro-deepseek
 - kimi-k2.6-ollama
@@ -36,41 +35,39 @@ fallbacks:
   glm-5.2-opencodego: []
   kimi-k2.7-code-ollama: []
   kimi-k2.7-code-opencodego: []
-  deepseek-v4-pro-opencodego: []
   deepseek-v4-pro-ollama: []
   deepseek-v4-pro-deepseek: []
   kimi-k2.6-ollama: []
   kimi-k2.6-opencodego: []
   deepseek-v4-flash:
   - deepseek-v4-flash-deepseek
-  - deepseek-v4-flash-ollama
+  - deepseek-v4-flash-opencodego
   glm-5.2:
+  - glm-5.2-opencodego
   - kimi-k2.7-code-opencodego
-  - glm-5.2-ollama
   kimi-k2.7-code:
+  - kimi-k2.7-code-opencodego
   - deepseek-v4-pro-deepseek
-  - kimi-k2.7-code-ollama
   deepseek-v4-pro:
   - deepseek-v4-pro-deepseek
-  - deepseek-v4-pro-ollama
   kimi-k2.6:
-  - kimi-k2.6-ollama
+  - kimi-k2.6-opencodego
   explorer:
   - deepseek-v4-flash-deepseek
-  - deepseek-v4-flash-ollama
+  - deepseek-v4-flash-opencodego
   planner:
+  - glm-5.2-opencodego
+  - deepseek-v4-pro-deepseek
+  - kimi-k2.7-code-opencodego
+  coder:
   - kimi-k2.7-code-opencodego
   - deepseek-v4-pro-deepseek
-  - glm-5.2-ollama
-  coder:
-  - deepseek-v4-pro-deepseek
-  - kimi-k2.7-code-ollama
   coder-fast:
   - deepseek-v4-flash-deepseek
-  - deepseek-v4-flash-ollama
+  - deepseek-v4-flash-opencodego
   - kimi-k2.6-opencodego
   vision:
-  - kimi-k2.6-ollama
+  - kimi-k2.6-opencodego
 timeouts:
   deepseek-v4-flash-ollama: 60
   deepseek-v4-flash-deepseek: 60
@@ -79,7 +76,6 @@ timeouts:
   glm-5.2-opencodego: 120
   kimi-k2.7-code-ollama: 120
   kimi-k2.7-code-opencodego: 120
-  deepseek-v4-pro-opencodego: 120
   deepseek-v4-pro-ollama: 120
   deepseek-v4-pro-deepseek: 120
   kimi-k2.6-ollama: 60
@@ -103,21 +99,20 @@ provider_models:
   glm-5.2-opencodego: openai/glm-5.2
   kimi-k2.7-code-ollama: ollama_chat/kimi-k2.7-code
   kimi-k2.7-code-opencodego: openai/kimi-k2.7-code
-  deepseek-v4-pro-opencodego: openai/deepseek-v4-pro
   deepseek-v4-pro-ollama: ollama_chat/deepseek-v4-pro
   deepseek-v4-pro-deepseek: deepseek/deepseek-v4-pro
   kimi-k2.6-ollama: ollama_chat/kimi-k2.6
   kimi-k2.6-opencodego: openai/kimi-k2.6
-  deepseek-v4-flash: openai/deepseek-v4-flash
-  glm-5.2: openai/glm-5.2
-  kimi-k2.7-code: openai/kimi-k2.7-code
-  deepseek-v4-pro: openai/deepseek-v4-pro
-  kimi-k2.6: openai/kimi-k2.6
-  explorer: openai/deepseek-v4-flash
-  planner: openai/glm-5.2
-  coder: openai/kimi-k2.7-code
-  coder-fast: openai/deepseek-v4-flash
-  vision: openai/kimi-k2.6
+  deepseek-v4-flash: ollama_chat/deepseek-v4-flash
+  glm-5.2: ollama_chat/glm-5.2
+  kimi-k2.7-code: ollama_chat/kimi-k2.7-code
+  deepseek-v4-pro: ollama_chat/deepseek-v4-pro
+  kimi-k2.6: ollama_chat/kimi-k2.6
+  explorer: ollama_chat/deepseek-v4-flash
+  planner: ollama_chat/glm-5.2
+  coder: ollama_chat/kimi-k2.7-code
+  coder-fast: ollama_chat/deepseek-v4-flash
+  vision: ollama_chat/kimi-k2.6
 model_prices:
   deepseek-v4-flash-ollama:
     input_cost_per_token: 0.0
@@ -138,9 +133,6 @@ model_prices:
     input_cost_per_token: 0.0
     output_cost_per_token: 0.0
   kimi-k2.7-code-opencodego:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  deepseek-v4-pro-opencodego:
     input_cost_per_token: 0.0
     output_cost_per_token: 0.0
   deepseek-v4-pro-ollama:

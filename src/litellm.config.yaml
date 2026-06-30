@@ -90,20 +90,6 @@ model_list:
     reasoning_level: medium
     input_cost_per_token: 0.0
     output_cost_per_token: 0.0
-- model_name: deepseek-v4-pro-opencodego
-  litellm_params:
-    model: openai/deepseek-v4-pro
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
-  model_info:
-    role: provider-deployment
-    family: deepseek-v4-pro
-    provider: opencodego
-    reasoning_level: high
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
 - model_name: deepseek-v4-pro-ollama
   litellm_params:
     model: ollama_chat/deepseek-v4-pro
@@ -155,110 +141,90 @@ model_list:
     output_cost_per_token: 0.0
 - model_name: deepseek-v4-flash
   litellm_params:
-    model: openai/deepseek-v4-flash
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/deepseek-v4-flash
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: model-family
     family: deepseek-v4-flash
     reasoning_level: low
 - model_name: glm-5.2
   litellm_params:
-    model: openai/glm-5.2
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/glm-5.2
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: model-family
     family: glm-5.2
     reasoning_level: high
 - model_name: kimi-k2.7-code
   litellm_params:
-    model: openai/kimi-k2.7-code
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/kimi-k2.7-code
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: model-family
     family: kimi-k2.7-code
     reasoning_level: medium
 - model_name: deepseek-v4-pro
   litellm_params:
-    model: openai/deepseek-v4-pro
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/deepseek-v4-pro
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: model-family
     family: deepseek-v4-pro
     reasoning_level: high
 - model_name: kimi-k2.6
   litellm_params:
-    model: openai/kimi-k2.6
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/kimi-k2.6
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: model-family
     family: kimi-k2.6
     reasoning_level: low
 - model_name: explorer
   litellm_params:
-    model: openai/deepseek-v4-flash
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/deepseek-v4-flash
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: task-alias
     task: explore
     reasoning_level: low
 - model_name: planner
   litellm_params:
-    model: openai/glm-5.2
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/glm-5.2
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: task-alias
     task: plan
     reasoning_level: high
 - model_name: coder
   litellm_params:
-    model: openai/kimi-k2.7-code
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/kimi-k2.7-code
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: task-alias
     task: build
     reasoning_level: medium
 - model_name: coder-fast
   litellm_params:
-    model: openai/deepseek-v4-flash
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/deepseek-v4-flash
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: task-alias
     task: quick-build
     reasoning_level: low
 - model_name: vision
   litellm_params:
-    model: openai/kimi-k2.6
-    api_key: os.environ/OPENCODE_GO_API_KEY
-    api_base: os.environ/OPENCODE_GO_API_BASE
-    additional_drop_params:
-    - reasoningSummary
+    model: ollama_chat/kimi-k2.6
+    api_key: os.environ/OLLAMA_API_KEY
+    api_base: os.environ/OLLAMA_API_BASE
   model_info:
     role: task-alias
     task: vision
@@ -285,39 +251,37 @@ router_settings:
   - glm-5.2-opencodego: []
   - kimi-k2.7-code-ollama: []
   - kimi-k2.7-code-opencodego: []
-  - deepseek-v4-pro-opencodego: []
   - deepseek-v4-pro-ollama: []
   - deepseek-v4-pro-deepseek: []
   - kimi-k2.6-ollama: []
   - kimi-k2.6-opencodego: []
   - deepseek-v4-flash:
     - deepseek-v4-flash-deepseek
-    - deepseek-v4-flash-ollama
+    - deepseek-v4-flash-opencodego
   - glm-5.2:
+    - glm-5.2-opencodego
     - kimi-k2.7-code-opencodego
-    - glm-5.2-ollama
   - kimi-k2.7-code:
+    - kimi-k2.7-code-opencodego
     - deepseek-v4-pro-deepseek
-    - kimi-k2.7-code-ollama
   - deepseek-v4-pro:
     - deepseek-v4-pro-deepseek
-    - deepseek-v4-pro-ollama
   - kimi-k2.6:
-    - kimi-k2.6-ollama
+    - kimi-k2.6-opencodego
   - explorer:
     - deepseek-v4-flash-deepseek
-    - deepseek-v4-flash-ollama
+    - deepseek-v4-flash-opencodego
   - planner:
+    - glm-5.2-opencodego
+    - deepseek-v4-pro-deepseek
+    - kimi-k2.7-code-opencodego
+  - coder:
     - kimi-k2.7-code-opencodego
     - deepseek-v4-pro-deepseek
-    - glm-5.2-ollama
-  - coder:
-    - deepseek-v4-pro-deepseek
-    - kimi-k2.7-code-ollama
   - coder-fast:
     - deepseek-v4-flash-deepseek
-    - deepseek-v4-flash-ollama
+    - deepseek-v4-flash-opencodego
     - kimi-k2.6-opencodego
   - vision:
-    - kimi-k2.6-ollama
+    - kimi-k2.6-opencodego
   max_parallel_requests: 100
