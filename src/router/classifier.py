@@ -31,14 +31,19 @@ REASONING_SIGNALS = (
 )
 
 
-def classify_request(request: dict[str, Any]) -> str:
+def classify_request(
+    request: dict[str, Any],
+    *,
+    code_signals: tuple[str, ...] = CODE_SIGNALS,
+    reasoning_signals: tuple[str, ...] = REASONING_SIGNALS,
+) -> str:
     if _has_image_content(request.get("messages", [])):
         return "vision"
 
     text = _message_text(request.get("messages", [])).lower()
-    if any(signal in text for signal in CODE_SIGNALS):
+    if any(signal in text for signal in code_signals):
         return "opencodego-fast"
-    if any(signal in text for signal in REASONING_SIGNALS):
+    if any(signal in text for signal in reasoning_signals):
         return "deepseek-pro"
     return "fast"
 

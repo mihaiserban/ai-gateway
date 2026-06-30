@@ -1,0 +1,61 @@
+# Personal AI Gateway router configuration.
+# Mirrors the defaults previously hard-coded in routing.py / classifier.py.
+# Editing this file does not require a code change; the router reloads it
+# at startup.
+
+cache_ttl_seconds: 600
+
+allowed_models:
+  - fast
+  - deepseek-pro
+  - opencodego-fast
+  - opencodego-code
+  - ollama-cloud
+
+fallbacks:
+  fast:
+    - ollama-cloud
+  deepseek-pro:
+    - opencodego-code
+    - fast
+  opencodego-fast:
+    - fast
+    - deepseek-pro
+  opencodego-code:
+    - deepseek-pro
+    - fast
+  ollama-cloud:
+    - fast
+
+# Per-alias request timeout in seconds (future use; default 120).
+timeouts:
+  fast: 120
+  deepseek-pro: 120
+  opencodego-fast: 120
+  opencodego-code: 120
+  ollama-cloud: 120
+
+classifier_keywords:
+  code_signals:
+    - " refactor"
+    - " implement"
+    - " stack trace"
+    - " traceback"
+    - " diff"
+    - ".py"
+    - ".ts"
+    - ".tsx"
+    - ".js"
+    - ".go"
+    - ".rs"
+    - "src/"
+    - "tests/"
+  reasoning_signals:
+    - "analyze"
+    - "architecture"
+    - "design"
+    - "why"
+    - "race condition"
+    - "root cause"
+    - "debug"
+    - "explain"

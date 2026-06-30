@@ -99,6 +99,10 @@ logs, and a tiny local Docker/Node footprint.
 Copy these ideas into the LiteLLM-based build:
 
 - Config-driven routes and fallback policy instead of hard-coded logic.
+  `src/router/router_config.yaml` now holds `cache_ttl_seconds`,
+  `allowed_models`, `fallbacks`, per-alias `timeouts`, and
+  `classifier_keywords`; it is loaded and validated at startup and
+  cross-checked against `src/litellm.config.yaml`.
 - Explicit guardrail/redaction layer before requests leave the NAS.
 - Local request console/log summaries, but without prompt body logging by
   default.

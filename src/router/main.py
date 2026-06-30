@@ -9,6 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from router.config import load_and_validate
 from router.redaction import redact_payload
 from router.routing import RouteConfig, choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
@@ -22,12 +23,17 @@ def create_app(
     litellm_base_url: str | None = None,
     redis_url: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
+    config_path: str | None = None,
+    litellm_config_path: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Personal AI Gateway Router")
     app.state.litellm_base_url = (litellm_base_url or os.environ.get("LITELLM_BASE_URL") or "http://litellm:4000").rstrip("/")
     app.state.redis_url = redis_url if redis_url is not None else os.environ.get("REDIS_URL")
     app.state.transport = transport
-    app.state.route_config = RouteConfig()
+    app.state.route_config = load_and_validate(
+        config_path=config_path,
+        litellm_path=litellm_config_path,
+    )
     app.state.session_store = _session_store(app.state.redis_url)
 
     @app.get("/healthz")
