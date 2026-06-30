@@ -48,13 +48,14 @@ def create_app(
 
         upstream_body = redact_payload(body)
 
-        fallback_count = int(session.get("fallback_count", 0)) if session else 0
         original_model = decision.model
         current_model = original_model
-        last_response: Response | None = None
+        last_response: httpx.Response | None = None
         last_exception: Exception | None = None
+        attempt = 0
+        tried: set[str] = {original_model}
 
-        for attempt in range(2):
+        while True:
             upstream_body["model"] = current_model
             try:
                 response = await _proxy_json(
@@ -64,25 +65,23 @@ def create_app(
                 )
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exception = exc
-                if attempt == 1:
+                last_response = None
+            else:
+                last_response = response
+                last_exception = None
+                if _is_success(response):
                     break
-                next_model = next_fallback(original_model, fallback_count, app.state.route_config)
-                if next_model is None:
+                if not _is_retryable_status(response.status_code):
                     break
-                current_model = next_model
-                fallback_count += 1
-                continue
 
-            last_response = response
-            if _is_success(response):
-                break
-            if not _is_retryable_status(response.status_code) or attempt == 1:
-                break
-            next_model = next_fallback(original_model, fallback_count, app.state.route_config)
-            if next_model is None:
+            next_model = next_fallback(original_model, attempt, app.state.route_config)
+            if next_model is None or next_model in tried:
                 break
             current_model = next_model
-            fallback_count += 1
+            tried.add(current_model)
+            attempt += 1
+
+        fallback_count = attempt
 
         if last_response is not None and _is_success(last_response):
             await app.state.session_store.set(
@@ -107,10 +106,7 @@ def create_app(
         if last_response is not None:
             return _response_from_upstream(last_response, extra_headers=extra_headers)
 
-        if last_exception is not None:
-            raise last_exception
-
-        return JSONResponse(status_code=500, content={"error": "upstream request failed"})
+        raise last_exception if last_exception is not None else RuntimeError("upstream request failed")
 
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def unsupported_v1_path(path: str) -> JSONResponse:
@@ -137,7 +133,7 @@ def create_app(
     return app
 
 
-def _is_success(response: Response) -> bool:
+def _is_success(response: httpx.Response) -> bool:
     return 200 <= response.status_code < 300
 
 
