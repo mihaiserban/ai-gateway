@@ -79,9 +79,9 @@ turn it into a NAS-ready personal v1.
 ## P1: Auth And Access
 
 - [ ] Create one LiteLLM virtual key per agent/tool.
-- [ ] Stop using the master key in runbook examples except admin setup.
-- [ ] Add model allowlists per key.
-- [ ] Document Codex CLI config using the gateway URL and a virtual key.
+- [x] Stop using the master key in runbook examples except admin setup.
+- [x] Add model allowlists per key.
+- [x] Document Codex CLI config using the gateway URL and a virtual key.
 - [ ] Add a smoke test using a virtual key, not the master key.
 
 ## P2: Cost And Observability
