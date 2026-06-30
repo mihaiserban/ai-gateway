@@ -6,31 +6,20 @@ turn it into a NAS-ready personal v1.
 
 ## Review Findings
 
-- **Fallback behavior is mostly not implemented in the router.**
-  `src/router/routing.py` defines `next_fallback()`, but `src/router/main.py`
-  never uses it. LiteLLM has fallback config, but the router does not retry,
-  classify fallback errors, or report the actual fallback path.
-- **Failed upstream requests still update sticky session state.**
-  The router writes the chosen model before the LiteLLM call succeeds, so a
-  failing model can become sticky.
-- **Streaming is not actually streamed.**
-  The router buffers upstream responses and returns a normal response. Clients
-  using `stream: true` need real SSE passthrough.
-- **Fallback session IDs are unstable.**
-  The router uses Python `hash()`, which changes between processes. The plan
-  calls for a stable hash plus caller key fingerprint.
-- **`/healthz` is too shallow.**
-  It only reports router health. The plan expects router, LiteLLM, Redis, and
-  Postgres/stack readiness visibility.
-- **Router config is hard-coded.**
-  Aliases, TTL, fallbacks, and classifier keywords live in Python instead of a
-  config file.
-- **Plan has stale items.**
-  `docs/PLAN.md` references `router_config.yaml` and streaming passthrough, but
-  the current implementation does not provide those yet.
-- **Virtual keys/model allowlists are still pending.**
-  The README smoke tests still use the master key. Agents should use LiteLLM
-  virtual keys with model allowlists.
+All findings from the initial MVP review have been addressed:
+
+- **Fallback behavior**: the router now retries via `next_fallback()`,
+  classifies retryable errors, and reports `X-Gateway-Fallback-*` headers.
+- **Failed upstream requests**: session state is only written after a
+  successful (2xx) upstream response.
+- **Streaming**: true SSE passthrough is implemented for `stream: true`.
+- **Fallback session IDs**: stable SHA-256 with caller-key fingerprint.
+- **`/healthz`**: reports router, LiteLLM, Redis, and Postgres status;
+  `/readyz` returns 503 when any dependency is down.
+- **Router config**: `router_config.yaml` drives TTL, aliases, fallbacks,
+  timeouts, classifier keywords, retry backoff, and cache-key aliases.
+- **Virtual keys/model allowlists**: documented in the README; agents use
+  LiteLLM virtual keys with model allowlists, not the master key.
 
 ## P0: Correctness And Safety
 
