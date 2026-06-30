@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -12,8 +13,9 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from router.config import load_and_validate
 from router.health import all_ready, gather_health
+from router.metrics import Metrics
 from router.redaction import redact_payload
-from router.routing import choose_model, next_fallback
+from router.routing import _timeout_for, choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
 
 
@@ -41,6 +43,8 @@ def create_app(
         litellm_path=litellm_config_path,
     )
     app.state.session_store = _session_store(app.state.redis_url)
+    app.state.metrics = Metrics()
+    app.state.async_sleep = asyncio.sleep
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
@@ -55,6 +59,10 @@ def create_app(
             return JSONResponse(status_code=200, content=statuses)
         statuses["status"] = "not ready"
         return JSONResponse(status_code=503, content=statuses)
+
+    @app.get("/metrics")
+    async def metrics() -> JSONResponse:
+        return JSONResponse(status_code=200, content=app.state.metrics.snapshot())
 
     @app.get("/v1/models")
     async def models(request: Request) -> Response:
@@ -72,6 +80,8 @@ def create_app(
         upstream_body = redact_payload(body)
         is_stream = bool(body.get("stream"))
 
+        cache_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+
         original_model = decision.model
         current_model = original_model
         last_response: httpx.Response | None = None
@@ -81,11 +91,15 @@ def create_app(
 
         while True:
             upstream_body["model"] = current_model
+            if current_model in app.state.route_config.cache_key_aliases:
+                upstream_body["prompt_cache_key"] = cache_key
+            elif "prompt_cache_key" in upstream_body:
+                del upstream_body["prompt_cache_key"]
             try:
                 if is_stream:
-                    response = await _proxy_stream(request, "/v1/chat/completions", upstream_body)
+                    response = await _proxy_stream(request, "/v1/chat/completions", upstream_body, current_model)
                 else:
-                    response = await _proxy_json(request, "/v1/chat/completions", upstream_body)
+                    response = await _proxy_json(request, "/v1/chat/completions", upstream_body, current_model)
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exception = exc
                 last_response = None
@@ -105,6 +119,11 @@ def create_app(
             next_model = next_fallback(original_model, attempt, app.state.route_config)
             if next_model is None or next_model in tried:
                 break
+            delay = min(
+                app.state.route_config.retry_base_delay * (2 ** attempt),
+                app.state.route_config.retry_max_delay,
+            )
+            await app.state.async_sleep(delay)
             current_model = next_model
             tried.add(current_model)
             attempt += 1
@@ -145,6 +164,7 @@ def create_app(
             fallback_count,
             original_model,
         )
+        app.state.metrics.record(original_model, current_model, fallback_count)
 
         if last_response is not None:
             if is_stream and _is_success(last_response):
@@ -182,18 +202,22 @@ def create_app(
         request: Request,
         path: str,
         body: dict[str, Any],
+        model: str,
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
-        async with httpx.AsyncClient(transport=app.state.transport, timeout=120) as client:
+        timeout = _timeout_for(app.state.route_config, model)
+        async with httpx.AsyncClient(transport=app.state.transport, timeout=timeout) as client:
             return await client.post(url, headers=_forward_headers(request), json=body)
 
     async def _proxy_stream(
         request: Request,
         path: str,
         body: dict[str, Any],
+        model: str,
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
-        client = httpx.AsyncClient(transport=app.state.transport, timeout=120)
+        timeout = _timeout_for(app.state.route_config, model)
+        client = httpx.AsyncClient(transport=app.state.transport, timeout=timeout)
         response = await client.send(
             client.build_request("POST", url, headers=_forward_headers(request), json=body),
             stream=True,

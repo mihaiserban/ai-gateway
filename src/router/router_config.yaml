@@ -5,6 +5,9 @@
 
 cache_ttl_seconds: 600
 
+retry_base_delay: 0.2
+retry_max_delay: 2.0
+
 allowed_models:
   - fast
   - deepseek-pro
@@ -59,3 +62,6 @@ classifier_keywords:
     - "root cause"
     - "debug"
     - "explain"
+
+# providers that support prompt_cache_key: openai, deepseek, anthropic — not ollama
+cache_key_aliases: []

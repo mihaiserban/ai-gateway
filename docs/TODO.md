@@ -50,8 +50,8 @@ turn it into a NAS-ready personal v1.
 
 ## P1: Reliability V1
 
-- [ ] Add configurable request timeouts per alias.
-- [ ] Add exponential backoff for router-level retries.
+- [x] Add configurable request timeouts per alias.
+- [x] Add exponential backoff for router-level retries.
 - [x] Add `X-Gateway-Fallback-From` and `X-Gateway-Fallback-Count` response
       headers.
 - [x] Log structured request metadata: session id hash, selected model, routing
@@ -86,28 +86,28 @@ turn it into a NAS-ready personal v1.
 
 ## P2: Cost And Observability
 
-- [ ] Add `model_info` pricing metadata for OpenCode Go, DeepSeek, and Ollama
+- [x] Add `model_info` pricing metadata for OpenCode Go, DeepSeek, and Ollama
       Cloud aliases.
-- [ ] Track selected model counts.
-- [ ] Track fallback counts.
+- [x] Track selected model counts.
+- [x] Track fallback counts.
 - [ ] Track cache hit/miss when LiteLLM exposes it.
 - [ ] Add a daily spend summary command or runbook section.
-- [ ] Add a lightweight log format that is easy to grep on the NAS.
+- [x] Add a lightweight log format that is easy to grep on the NAS.
 
 ## P2: Caching
 
 - [ ] Verify LiteLLM Redis cache hits through logs or API metadata.
-- [ ] Add cache-related response headers if available.
-- [ ] Add stable `prompt_cache_key` only for providers that support it.
-- [ ] Keep semantic caching out until basic cache metrics are proven.
+- [x] Add cache-related response headers if available.
+- [x] Add stable `prompt_cache_key` only for providers that support it.
+- [x] Keep semantic caching out until basic cache metrics are proven.
 
 ## P2: NAS-Ready
 
-- [ ] Add backup and restore commands for Postgres and Redis volumes.
-- [ ] Add update and rollback runbook steps.
-- [ ] Add secret rotation runbook steps.
-- [ ] Add a `.env` generation helper script.
-- [ ] Document Tailscale-only exposure as the default deployment posture.
+- [x] Add backup and restore commands for Postgres and Redis volumes.
+- [x] Add update and rollback runbook steps.
+- [x] Add secret rotation runbook steps.
+- [x] Add a `.env` generation helper script.
+- [x] Document Tailscale-only exposure as the default deployment posture.
 - [ ] Decide whether LiteLLM admin UI needs a protected maintenance profile.
 
 ## P3: Future
