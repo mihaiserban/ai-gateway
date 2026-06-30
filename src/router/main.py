@@ -19,6 +19,7 @@ from router.metrics import Metrics
 from router.redaction import redact_payload
 from router.routing import _timeout_for, choose_model, next_fallback
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
+from router.usage_events import HttpUsageEventSink, UsageEvent, estimate_cost_usd, extract_usage, fingerprint
 
 FORWARDED_HEADERS = {"authorization", "content-type", "accept"}
 CACHE_RESPONSE_HEADERS = {
@@ -42,6 +43,7 @@ def create_app(
     transport: httpx.AsyncBaseTransport | None = None,
     config_path: str | None = None,
     litellm_config_path: str | None = None,
+    usage_sink: Any | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Personal AI Gateway Router")
     app.state.litellm_base_url = (
@@ -56,6 +58,7 @@ def create_app(
     )
     app.state.session_store = _session_store(app.state.redis_url)
     app.state.metrics = Metrics()
+    app.state.usage_sink = usage_sink or HttpUsageEventSink(os.environ.get("USAGE_LEDGER_URL"))
     app.state.async_sleep = asyncio.sleep
 
     @app.get("/healthz")
@@ -199,6 +202,32 @@ def create_app(
         cache_hit = _cache_hit(last_response) if last_response is not None else None
         app.state.metrics.record(original_model, current_model, fallback_count, cache_hit=cache_hit)
 
+        upstream_payload: dict[str, Any] | None = None
+        if last_response is not None and not is_stream:
+            try:
+                upstream_payload = last_response.json()
+            except Exception:
+                upstream_payload = None
+
+        await _record_usage_event(
+            app,
+            request=request,
+            session_id=session_id,
+            requested_model=decision.model,
+            selected_model=original_model,
+            served_model=current_model,
+            provider_model=provider_model,
+            reason=decision.reason,
+            status=status,
+            latency_ms=latency_ms,
+            fallback_count=fallback_count,
+            fallback_from=original_model,
+            cache_hit=cache_hit,
+            upstream_payload=upstream_payload,
+            error_class=_exception_class(last_exception),
+            stream=is_stream,
+        )
+
         if last_response is not None:
             if is_stream and _is_success(last_response):
                 return _streaming_response(last_response, extra_headers=extra_headers)
@@ -309,6 +338,69 @@ def _exception_status(exc: Exception) -> str:
     if isinstance(exc, httpx.RemoteProtocolError):
         return "remote_protocol_error"
     return "upstream_error"
+
+
+def _exception_class(exc: Exception | None) -> str | None:
+    if exc is None:
+        return None
+    return type(exc).__name__
+
+
+def _cache_status(cache_hit: bool | None) -> str:
+    if cache_hit is True:
+        return "hit"
+    if cache_hit is False:
+        return "miss"
+    return "unknown"
+
+
+async def _record_usage_event(
+    app: FastAPI,
+    *,
+    request: Request,
+    session_id: str,
+    requested_model: str | None,
+    selected_model: str,
+    served_model: str,
+    provider_model: str,
+    reason: str,
+    status: int | str,
+    latency_ms: int,
+    fallback_count: int,
+    fallback_from: str,
+    cache_hit: bool | None,
+    upstream_payload: dict[str, Any] | None,
+    error_class: str | None,
+    stream: bool,
+) -> None:
+    prompt_tokens, completion_tokens, total_tokens = extract_usage(upstream_payload)
+    event = UsageEvent(
+        timestamp=time.time(),
+        path=str(request.url.path),
+        method=request.method,
+        key_hash=fingerprint(request.headers.get("authorization")),
+        session_hash=fingerprint(session_id),
+        requested_model=requested_model,
+        selected_model=selected_model,
+        served_model=served_model,
+        provider_model=provider_model,
+        reason=reason,
+        status=str(status),
+        latency_ms=latency_ms,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        estimated_cost_usd=estimate_cost_usd(served_model, prompt_tokens, completion_tokens, app.state.route_config.model_prices),
+        cache_status=_cache_status(cache_hit),
+        fallback_count=fallback_count,
+        fallback_from=fallback_from if fallback_count > 0 else None,
+        error_class=error_class,
+        stream=stream,
+    )
+    try:
+        await app.state.usage_sink.record(event)
+    except Exception:
+        logger.exception("usage_event_sink_failed")
 
 
 def _cache_hit(upstream: httpx.Response) -> bool | None:
