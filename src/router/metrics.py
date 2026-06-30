@@ -73,9 +73,11 @@ class Metrics:
         *,
         success: bool,
         retryable_failure: bool,
+        provider_model: str | None = None,
     ) -> None:
         with self._lock:
-            availability = self.provider_availability.setdefault(model, ProviderAvailability())
+            key = provider_model or model
+            availability = self.provider_availability.setdefault(key, ProviderAvailability())
             availability.attempts += 1
             availability.last_status = status
             if success:

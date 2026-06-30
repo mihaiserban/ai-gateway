@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import httpx
+import psycopg
 import pytest
 
 from router.dashboard import UsageSummaryStore, live_payload, parse_days
@@ -25,7 +26,13 @@ def test_parse_days_allows_only_supported_windows(value, expected):
     assert parse_days(value) == expected
 
 
-def test_live_payload_combines_health_metrics_and_config():
+class FakeRedisStatsCollector:
+    async def snapshot(self) -> dict[str, object]:
+        return {"enabled": False}
+
+
+@pytest.mark.asyncio
+async def test_live_payload_combines_health_metrics_and_config():
     metrics = Metrics()
     metrics.record("coder", "coder", 0, cache_hit=True)
     state = SimpleNamespace(
@@ -36,9 +43,10 @@ def test_live_payload_combines_health_metrics_and_config():
             fallbacks={"coder": ["planner"], "planner": []},
             provider_models={"coder": "ollama_chat/kimi-k2.7-code"},
         ),
+        redis_stats_collector=FakeRedisStatsCollector(),
     )
 
-    payload = live_payload(
+    payload = await live_payload(
         state,
         health={"router": "ok", "litellm": "ok", "redis": "ok", "postgres": "ok", "status": "ok"},
         readiness={"router": "ok", "litellm": "ok", "redis": "ok", "postgres": "ok", "status": "ready"},
@@ -52,6 +60,7 @@ def test_live_payload_combines_health_metrics_and_config():
     assert payload["config"]["allowed_models"] == ["coder", "planner"]
     assert payload["config"]["fallbacks"] == {"coder": ["planner"], "planner": []}
     assert payload["config"]["provider_models"] == {"coder": "ollama_chat/kimi-k2.7-code"}
+    assert payload["redis"]["enabled"] is False
 
 
 def test_usage_summary_store_reads_ledger_with_window_filter():
@@ -99,8 +108,8 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
                 ],
             ]
 
-        def execute(self, sql: str, params: tuple[object, ...]) -> None:
-            self.calls.append((sql, params))
+        def execute(self, sql: str, params: tuple[object, ...] | None = None) -> None:
+            self.calls.append((sql, params or ()))
 
         def fetchall(self) -> list[dict[str, object]]:
             return self.results.pop(0)
@@ -119,7 +128,7 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
             return self.cursor_obj
 
     fake = FakeConnection()
-    store = UsageSummaryStore("postgresql://example", connect=lambda _: fake)
+    store = UsageSummaryStore("postgresql://example", connect=lambda _, **kwargs: fake)
 
     summary = store.summary(30)
 
@@ -130,9 +139,39 @@ def test_usage_summary_store_reads_ledger_with_window_filter():
     assert summary["daily_usage"][0]["day"] == "2026-06-30"
     assert summary["top_keys"][0]["key_hash"] == "abc123"
     assert summary["recent_failures"][0]["status"] == "503"
-    assert len(fake.cursor_obj.calls) == 5
-    for _, params in fake.cursor_obj.calls:
+    assert len(fake.cursor_obj.calls) == 6
+    schema_call = fake.cursor_obj.calls[0]
+    assert "create table if not exists gateway_usage_events" in schema_call[0].lower()
+    assert schema_call[1] == ()
+    for _, params in fake.cursor_obj.calls[1:]:
         assert params == (30,)
+
+
+def test_usage_summary_store_returns_error_payload_on_db_failure():
+    def broken_connect(_, **kwargs):
+        raise psycopg.OperationalError("connection refused")
+
+    store = UsageSummaryStore("postgresql://example", connect=broken_connect)
+    summary = store.summary(7)
+
+    assert summary["enabled"] is False
+    assert summary["period_days"] == 7
+    assert "database unavailable" in summary["error"]
+    assert summary["totals"] == {}
+    assert summary["top_models"] == []
+
+
+def test_usage_summary_store_passes_connect_timeout():
+    received_kwargs = {}
+
+    def connect(_, **kwargs):
+        received_kwargs.update(kwargs)
+        raise psycopg.OperationalError("stop")
+
+    store = UsageSummaryStore("postgresql://example", connect=connect, db_timeout_seconds=3)
+    store.summary(1)
+
+    assert received_kwargs.get("connect_timeout") == 3
 
 
 @pytest.mark.asyncio
@@ -158,8 +197,9 @@ async def test_dashboard_live_api_returns_json_shape():
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"health", "readiness", "metrics", "config"}
+    assert set(payload) == {"health", "readiness", "metrics", "redis", "config"}
     assert payload["config"]["default_model"] == "coder"
+    assert "enabled" in payload["redis"]
 
 
 @pytest.mark.asyncio

@@ -111,6 +111,9 @@ def create_app(
         attempt = 0
         tried: set[str] = {original_model}
 
+        def _provider_model(model: str) -> str:
+            return str(app.state.route_config.provider_models.get(model, model))
+
         while True:
             upstream_body["model"] = current_model
             if current_model in app.state.route_config.cache_key_aliases:
@@ -130,6 +133,7 @@ def create_app(
                     _exception_status(exc),
                     success=False,
                     retryable_failure=True,
+                    provider_model=_provider_model(current_model),
                 )
             else:
                 last_response = response
@@ -139,6 +143,7 @@ def create_app(
                     response.status_code,
                     success=_is_success(response),
                     retryable_failure=_is_retryable_status(response.status_code),
+                    provider_model=_provider_model(current_model),
                 )
                 if _is_success(response):
                     break
@@ -163,8 +168,8 @@ def create_app(
             attempt += 1
 
         fallback_count = attempt
-        latency_ms = int((time.perf_counter() - start) * 1000)
         provider_model = app.state.route_config.provider_models.get(current_model, "")
+        latency_ms = int((time.perf_counter() - start) * 1000)
 
         if last_response is not None and _is_success(last_response):
             await app.state.session_store.set(

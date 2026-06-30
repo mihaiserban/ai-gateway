@@ -169,21 +169,21 @@ async def test_metrics_tracks_availability_for_each_upstream_attempt(simple_rout
         )
 
     provider_availability = app.state.metrics.snapshot()["provider_availability"]
-    assert provider_availability["coder"]["attempts"] == 1
-    assert provider_availability["coder"]["successes"] == 0
-    assert provider_availability["coder"]["failures"] == 1
-    assert provider_availability["coder"]["retryable_failures"] == 1
-    assert provider_availability["coder"]["availability_percent"] == 0.0
-    assert provider_availability["coder"]["last_status"] == 503
-    assert provider_availability["coder"]["last_failure_ts"] is not None
+    assert provider_availability["provider/coder-model"]["attempts"] == 1
+    assert provider_availability["provider/coder-model"]["successes"] == 0
+    assert provider_availability["provider/coder-model"]["failures"] == 1
+    assert provider_availability["provider/coder-model"]["retryable_failures"] == 1
+    assert provider_availability["provider/coder-model"]["availability_percent"] == 0.0
+    assert provider_availability["provider/coder-model"]["last_status"] == 503
+    assert provider_availability["provider/coder-model"]["last_failure_ts"] is not None
 
-    assert provider_availability["explorer"]["attempts"] == 1
-    assert provider_availability["explorer"]["successes"] == 1
-    assert provider_availability["explorer"]["failures"] == 0
-    assert provider_availability["explorer"]["retryable_failures"] == 0
-    assert provider_availability["explorer"]["availability_percent"] == 100.0
-    assert provider_availability["explorer"]["last_status"] == 200
-    assert provider_availability["explorer"]["last_failure_ts"] is None
+    assert provider_availability["provider/explorer-model"]["attempts"] == 1
+    assert provider_availability["provider/explorer-model"]["successes"] == 1
+    assert provider_availability["provider/explorer-model"]["failures"] == 0
+    assert provider_availability["provider/explorer-model"]["retryable_failures"] == 0
+    assert provider_availability["provider/explorer-model"]["availability_percent"] == 100.0
+    assert provider_availability["provider/explorer-model"]["last_status"] == 200
+    assert provider_availability["provider/explorer-model"]["last_failure_ts"] is None
 
 
 @pytest.mark.asyncio

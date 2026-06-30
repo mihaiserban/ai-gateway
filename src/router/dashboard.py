@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from typing import Any
+import logging
+from typing import Any, Protocol
 
 import psycopg
 from fastapi import FastAPI, Request
@@ -10,9 +10,43 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from psycopg.rows import dict_row
 
 from router.health import all_ready, gather_health
+from router.redis_stats import RedisStatsCollector
+
+SCHEMA = """
+create table if not exists gateway_usage_events (
+    id bigserial primary key,
+    timestamp double precision not null,
+    path text not null,
+    method text not null,
+    key_hash text not null,
+    session_hash text not null,
+    requested_model text,
+    selected_model text not null,
+    served_model text not null,
+    provider_model text not null,
+    reason text not null,
+    status text not null,
+    latency_ms integer not null,
+    prompt_tokens integer,
+    completion_tokens integer,
+    total_tokens integer,
+    estimated_cost_usd double precision,
+    cache_status text not null,
+    fallback_count integer not null,
+    fallback_from text,
+    error_class text,
+    stream boolean not null
+);
+create index if not exists gateway_usage_events_timestamp_idx on gateway_usage_events(timestamp);
+create index if not exists gateway_usage_events_key_hash_idx on gateway_usage_events(key_hash);
+create index if not exists gateway_usage_events_served_model_idx on gateway_usage_events(served_model);
+"""
+
+logger = logging.getLogger("router.dashboard")
 
 SUPPORTED_WINDOWS = {1, 7, 30}
 DEFAULT_WINDOW_DAYS = 30
+DB_TIMEOUT_SECONDS = 5
 
 
 def parse_days(value: str | None) -> int:
@@ -23,12 +57,14 @@ def parse_days(value: str | None) -> int:
     return days if days in SUPPORTED_WINDOWS else DEFAULT_WINDOW_DAYS
 
 
-def live_payload(app_state: Any, health: dict[str, str], readiness: dict[str, str]) -> dict[str, Any]:
+async def live_payload(app_state: Any, health: dict[str, str], readiness: dict[str, str]) -> dict[str, Any]:
     config = app_state.route_config
+    redis_stats = await app_state.redis_stats_collector.snapshot()
     return {
         "health": health,
         "readiness": readiness,
         "metrics": app_state.metrics.snapshot(),
+        "redis": redis_stats,
         "config": {
             "default_model": config.default_model,
             "allowed_models": sorted(config.allowed_models),
@@ -37,28 +73,47 @@ def live_payload(app_state: Any, health: dict[str, str], readiness: dict[str, st
         },
     }
 
+class _Connection(Protocol):
+    def __enter__(self) -> Any: ...
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None: ...
+    def cursor(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class _Connect(Protocol):
+    def __call__(self, conninfo: str, /, **kwargs: Any) -> _Connection: ...
+
 
 class UsageSummaryStore:
     def __init__(
         self,
         database_url: str | None,
         *,
-        connect: Callable[[str], Any] = psycopg.connect,
+        connect: _Connect | Any = psycopg.connect,
+        db_timeout_seconds: float = DB_TIMEOUT_SECONDS,
     ) -> None:
         self.database_url = database_url
         self._connect = connect
+        self._db_timeout_seconds = db_timeout_seconds
 
     def summary(self, days: int) -> dict[str, Any]:
         if not self.database_url:
             return _empty_usage_summary(days)
 
-        with self._connect(self.database_url) as conn:
-            cur = conn.cursor(row_factory=dict_row)
-            totals = _fetch_one(cur, TOTALS_SQL, days)
-            top_models = _fetch_all(cur, TOP_MODELS_SQL, days)
-            daily_usage = _fetch_all(cur, DAILY_USAGE_SQL, days)
-            top_keys = _fetch_all(cur, TOP_KEYS_SQL, days)
-            recent_failures = _fetch_all(cur, RECENT_FAILURES_SQL, days)
+        try:
+            with self._connect(self.database_url, connect_timeout=self._db_timeout_seconds) as conn:
+                cur = conn.cursor(row_factory=dict_row)
+                cur.execute(SCHEMA)
+                totals = _fetch_one(cur, TOTALS_SQL, days)
+                top_models = _fetch_all(cur, TOP_MODELS_SQL, days)
+                daily_usage = _fetch_all(cur, DAILY_USAGE_SQL, days)
+                top_keys = _fetch_all(cur, TOP_KEYS_SQL, days)
+                recent_failures = _fetch_all(cur, RECENT_FAILURES_SQL, days)
+        except psycopg.Error as exc:
+            logger.warning("usage_summary_db_failed: %s", exc)
+            return _error_usage_summary(days, f"database unavailable: {type(exc).__name__}")
+        except Exception as exc:
+            logger.warning("usage_summary_unexpected_error: %s", exc)
+            return _error_usage_summary(days, f"usage summary failed: {type(exc).__name__}")
 
         return {
             "enabled": True,
@@ -75,6 +130,12 @@ def _empty_usage_summary(days: int) -> dict[str, Any]:
     return {"enabled": False, "period_days": days, "totals": {}} | {
         key: [] for key in ("top_models", "daily_usage", "top_keys", "recent_failures")
     }
+
+
+def _error_usage_summary(days: int, message: str) -> dict[str, Any]:
+    payload = _empty_usage_summary(days)
+    payload["error"] = message
+    return payload
 
 
 def _fetch_one(cur: Any, sql: str, days: int) -> dict[str, Any]:
@@ -212,6 +273,7 @@ DASHBOARD_HTML = """<!doctype html>
     .metric { font-size: 30px; font-weight: 700; color: var(--ink); line-height: 1.1; }
     .metric.small { font-size: 14px; font-weight: 500; color: var(--ink-muted); line-height: 1.4; }
     .muted { color: var(--ink-muted); font-size: 13px; }
+    .error { color: var(--pink); font-weight: 600; }
     .topbar { display: flex; gap: 8px; }
     button { border: 1px solid var(--hairline); background: transparent; border-radius: var(--radius-md); padding: 8px 14px; cursor: pointer; color: var(--ink-muted); font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.2px; text-transform: uppercase; }
     button[aria-pressed="true"] { background: var(--ink); color: var(--night); border-color: var(--ink); }
@@ -253,6 +315,8 @@ DASHBOARD_HTML = """<!doctype html>
       <div class="window span-6"><h2>Daily Usage</h2><div id="daily"></div></div>
       <div class="window span-6"><h2>Provider Availability</h2><div id="availability"></div></div>
       <div class="window span-6"><h2>Recent Failures</h2><div id="failures"></div></div>
+      <div class="window span-6"><h2>System Health</h2><div id="health"></div></div>
+      <div class="window span-6"><h2>Redis Stats</h2><div id="redis"></div></div>
     </section>
   </main>
   <script>
@@ -269,29 +333,85 @@ DASHBOARD_HTML = """<!doctype html>
     });
 
     async function refresh() {
-      const [live, usage] = await Promise.all([
-        fetch("/dashboard/api/live").then((response) => response.json()),
-        fetch(`/dashboard/api/usage?days=${selectedDays}`).then((response) => response.json()),
-      ]);
-      render(live, usage);
+      const updated = document.getElementById("updated");
+      try {
+        const [liveResponse, usageResponse] = await Promise.all([
+          fetch("/dashboard/api/live"),
+          fetch(`/dashboard/api/usage?days=${selectedDays}`),
+        ]);
+        if (!liveResponse.ok) throw new Error(`live API ${liveResponse.status}`);
+        if (!usageResponse.ok) throw new Error(`usage API ${usageResponse.status}`);
+        render(await liveResponse.json(), await usageResponse.json());
+      } catch (err) {
+        updated.textContent = `Error: ${err.message}`;
+        updated.classList.add("error");
+      }
     }
 
     function render(live, usage) {
-      const status = live.readiness.status || "unknown";
+      const updated = document.getElementById("updated");
+      updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      updated.classList.remove("error");
+      const status = (live.readiness && live.readiness.status) || "unknown";
       const chip = document.getElementById("readiness-chip");
       chip.textContent = status;
       chip.className = "status-chip " + (status === "ready" ? "" : status === "not ready" ? "warn" : "mute");
-      document.getElementById("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
       document.getElementById("readiness").textContent = status;
-      const degraded = Object.entries(live.health).filter(([k, v]) => k !== "status" && k !== "router" && v !== "ok" && v !== "disabled");
+      const degraded = Object.entries(live.health || {}).filter(([k, v]) => k !== "status" && k !== "router" && v !== "ok" && v !== "disabled");
       document.getElementById("health-summary").textContent = degraded.map(([k, v]) => `${k}: ${v}`).join(" / ") || "all systems ok";
-      document.getElementById("requests").textContent = fmt.format(usage.totals.requests || live.metrics.requests_total || 0);
-      document.getElementById("tokens").textContent = fmt.format(usage.totals.total_tokens || 0);
-      document.getElementById("spend").textContent = usd.format(usage.totals.estimated_cost_usd || 0);
+      if (usage.error) {
+        updated.textContent = `Usage error: ${usage.error}`;
+        updated.classList.add("error");
+      }
+      const totals = usage.totals || {};
+      document.getElementById("requests").textContent = fmt.format(totals.requests || live.metrics.requests_total || 0);
+      document.getElementById("tokens").textContent = fmt.format(totals.total_tokens || 0);
+      document.getElementById("spend").textContent = usd.format(totals.estimated_cost_usd || 0);
       renderModels(usage.top_models || []);
       renderDaily(usage.daily_usage || []);
       renderAvailability(live.metrics.provider_availability || {});
       renderFailures(usage.recent_failures || []);
+      renderHealth(live.health || {});
+      renderRedis(live.redis || {});
+    }
+
+    function renderHealth(health) {
+      const rows = Object.entries(health).filter(([key]) => key !== "status").map(([key, value]) => [
+        `<span class="mono">${escapeHtml(key)}</span>`,
+        badge(escapeHtml(value), value === "ok" ? "ok" : value === "disabled" ? "" : "error"),
+      ]);
+      document.getElementById("health").innerHTML = table(["Dependency", "Status"], rows);
+    }
+
+    function renderRedis(redis) {
+      const container = document.getElementById("redis");
+      if (!redis.enabled) {
+        container.innerHTML = '<div class="muted">Redis not configured.</div>';
+        return;
+      }
+      if (redis.error) {
+        container.innerHTML = `<div class="muted error">${escapeHtml(redis.error)}</div>`;
+        return;
+      }
+      const memory = redis.memory || {};
+      const commands = redis.commands || {};
+      const keyspace = redis.keyspace || {};
+      const clients = redis.clients || {};
+      const hits = keyspace.hits || 0;
+      const misses = keyspace.misses || 0;
+      const ratio = hits + misses > 0 ? Math.round((hits / (hits + misses)) * 100) : 0;
+      const used = _memoryLabel(memory.used_human);
+      const peak = _memoryLabel(memory.peak_human);
+      container.innerHTML = `
+        <div class="grid" style="gap: 8px;">
+          <div class="window span-6"><h2>Memory</h2><div class="metric small">${escapeHtml(used)} / peak ${escapeHtml(peak)}</div></div>
+          <div class="window span-6"><h2>Keys</h2><div class="metric">${fmt.format(redis.db_keys || 0)}</div></div>
+          <div class="window span-6"><h2>Commands</h2><div class="metric">${fmt.format(commands.total_processed || 0)}</div></div>
+          <div class="window span-6"><h2>Clients</h2><div class="metric">${fmt.format(clients.connected || 0)}</div></div>
+          <div class="window span-6"><h2>Cache Hit Ratio</h2><div class="metric">${ratio}%</div><div class="muted">${fmt.format(hits)} hits / ${fmt.format(misses)} misses</div></div>
+          <div class="window span-6"><h2>Expired / Evicted</h2><div class="metric small">${fmt.format(redis.expired_keys || 0)} / ${fmt.format(redis.evicted_keys || 0)}</div></div>
+        </div>
+      `;
     }
 
     function renderModels(rows) {
@@ -323,8 +443,9 @@ DASHBOARD_HTML = """<!doctype html>
     }
 
     function renderFailures(rows) {
-      document.getElementById("failures").innerHTML = table(["Model", "Status", "Error", "Fallbacks"], rows.map((row) => [
-        `<span class="mono">${escapeHtml(row.served_model)}</span>`,
+      document.getElementById("failures").innerHTML = table(["Provider / Model", "Alias", "Status", "Error", "Fallbacks"], rows.map((row) => [
+        `<span class="mono">${escapeHtml(row.provider_model || row.served_model)}</span>`,
+        `<span class="badge">${escapeHtml(row.served_model)}</span>`,
         `<span class="mono">${badge(escapeHtml(row.status), /^2/.test(row.status) ? "ok" : "error")}</span>`,
         `<span class="mono">${escapeHtml(row.error_class || "-")}</span>`,
         fmt.format(row.fallback_count || 0),
@@ -344,6 +465,15 @@ DASHBOARD_HTML = """<!doctype html>
       return String(value).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
     }
 
+    function _memoryLabel(value) {
+      if (!value) return "-";
+      const match = String(value).match(/^([0-9.]+)\\s*([KMGT]?B?)$/i);
+      if (!match) return value;
+      const [, num, suffix] = match;
+      const unit = suffix.toUpperCase() || "B";
+      return `${num} ${unit}`;
+    }
+
     refresh();
     setInterval(refresh, 30000);
   </script>
@@ -353,6 +483,7 @@ DASHBOARD_HTML = """<!doctype html>
 
 def register_dashboard(app: FastAPI) -> None:
     app.state.usage_summary_store = UsageSummaryStore(getattr(app.state, "database_url", None))
+    app.state.redis_stats_collector = RedisStatsCollector(getattr(app.state, "redis_url", None))
 
     @app.get("/dashboard", include_in_schema=False)
     async def dashboard_page() -> HTMLResponse:
@@ -363,10 +494,17 @@ def register_dashboard(app: FastAPI) -> None:
         health = await gather_health(app.state)
         readiness = dict(health)
         readiness["status"] = "ready" if all_ready(readiness) else "not ready"
-        return JSONResponse(live_payload(app.state, health, readiness))
+        return JSONResponse(await live_payload(app.state, health, readiness))
 
     @app.get("/dashboard/api/usage", include_in_schema=False)
     async def dashboard_usage(request: Request) -> JSONResponse:
         days = parse_days(request.query_params.get("days"))
-        summary = await asyncio.to_thread(app.state.usage_summary_store.summary, days)
+        try:
+            summary = await asyncio.wait_for(
+                asyncio.to_thread(app.state.usage_summary_store.summary, days),
+                timeout=app.state.usage_summary_store._db_timeout_seconds + 2,
+            )
+        except TimeoutError:
+            logger.warning("usage_summary_request_timeout")
+            summary = _error_usage_summary(days, "usage summary timed out")
         return JSONResponse(summary)

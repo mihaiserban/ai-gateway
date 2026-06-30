@@ -12,6 +12,7 @@ services:
       LITELLM_BASE_URL: http://litellm:4000
       REDIS_URL: ${REDIS_URL}
       USAGE_LEDGER_URL: http://usage-ledger:4200
+      DATABASE_URL: ${DATABASE_URL}
     ports:
       - "4100:4100"
     depends_on:
