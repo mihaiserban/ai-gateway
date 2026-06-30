@@ -17,9 +17,12 @@ tracking.
 ```text
 src/
   docker-compose.yml
+  gateway.config.yaml
   litellm.config.yaml
   .env.example
   README.md
+  scripts/
+    generate_configs.py
   router/
     Dockerfile
     requirements.txt
@@ -27,6 +30,7 @@ src/
     classifier.py
     redaction.py
     routing.py
+    router_config.yaml
     sessions.py
     tests/
 ```
@@ -177,7 +181,7 @@ curl -X POST http://localhost:4000/key/generate \
 
 Use the returned `key` value as the `Authorization: Bearer <key>` for that
 agent. Replace `reasoning` with an alias you have configured if it is not in
-`litellm.config.yaml`.
+`gateway.config.yaml`.
 
 The master key is only for admin setup (creating keys, viewing spend). Do not
 put it in agent configs.
@@ -197,7 +201,7 @@ not configured as an upstream provider.
 
 ## Active Aliases
 
-Use model aliases from `litellm.config.yaml`:
+Use model aliases from `gateway.config.yaml`:
 
 - `fast`: DeepSeek V4 Flash direct API
 - `deepseek-pro`: DeepSeek V4 Pro direct API
@@ -316,7 +320,7 @@ docker compose cp redis:/data/appendonly.aof backups/redis-$(date +%F).aof
 
 # Config + secrets (to a safe, offline location)
 tar czf backups/ai-gateway-config-$(date +%F).tgz \
-  docker-compose.yml litellm.config.yaml router/router_config.yaml .env
+  docker-compose.yml gateway.config.yaml litellm.config.yaml router/router_config.yaml .env
 ```
 
 Restore:
@@ -416,6 +420,7 @@ Back up the Docker volumes before major upgrades:
 - `LITELLM_SALT_KEY` is used to encrypt stored provider credentials. Do not
   rotate it casually after creating models or keys.
 - Keep `.env` only on the NAS or in a password manager.
-- Put provider model changes in `litellm.config.yaml`, then redeploy.
+- Put provider model changes in `gateway.config.yaml`, run
+  `python3 scripts/generate_configs.py`, then redeploy.
 - LiteLLM can warn that custom model costs are missing. That does not block
   calls; add `model_info` pricing later if exact spend reporting matters.

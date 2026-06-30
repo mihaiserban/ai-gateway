@@ -1,0 +1,106 @@
+# Human-edited source of truth for the personal AI gateway.
+# Run `python3 src/scripts/generate_configs.py` after editing this file.
+
+router:
+  cache_ttl_seconds: 600
+  retry_base_delay: 0.2
+  retry_max_delay: 2.0
+  classifier_keywords:
+    code_signals:
+      - " refactor"
+      - " implement"
+      - " stack trace"
+      - " traceback"
+      - " diff"
+      - ".py"
+      - ".ts"
+      - ".tsx"
+      - ".js"
+      - ".go"
+      - ".rs"
+      - "src/"
+      - "tests/"
+    reasoning_signals:
+      - "analyze"
+      - "architecture"
+      - "design"
+      - "why"
+      - "race condition"
+      - "root cause"
+      - "debug"
+      - "explain"
+  # Providers that support prompt_cache_key: openai, deepseek, anthropic; not ollama.
+  cache_key_aliases: []
+
+litellm:
+  settings:
+    drop_params: true
+    request_timeout: 120
+    num_retries: 1
+  cache:
+    type: redis
+    redis_url_env: REDIS_URL
+  general:
+    master_key_env: LITELLM_MASTER_KEY
+    database_url_env: DATABASE_URL
+
+models:
+  - name: fast
+    litellm_model: deepseek/deepseek-v4-flash
+    api_key_env: DEEPSEEK_API_KEY
+    timeout: 120
+    fallbacks:
+      - ollama-cloud
+    model_info:
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
+
+  - name: deepseek-pro
+    litellm_model: deepseek/deepseek-v4-pro
+    api_key_env: DEEPSEEK_API_KEY
+    timeout: 120
+    fallbacks:
+      - opencodego-code
+      - fast
+    model_info:
+      input_cost_per_token: 0.00000028
+      output_cost_per_token: 0.00000056
+
+  - name: opencodego-fast
+    litellm_model: openai/kimi-k2.7-code
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    timeout: 120
+    fallbacks:
+      - fast
+      - deepseek-pro
+    additional_drop_params:
+      - reasoningSummary
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: opencodego-code
+    litellm_model: openai/deepseek-v4-pro
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    timeout: 120
+    fallbacks:
+      - deepseek-pro
+      - fast
+    additional_drop_params:
+      - reasoningSummary
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+  - name: ollama-cloud
+    litellm_model: ollama_chat/gemma3:27b
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    timeout: 120
+    fallbacks:
+      - fast
+    model_info:
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0

@@ -43,9 +43,12 @@ and Redis stay internal to Docker.
 +-- pyproject.toml             # lint, type-check, test, and coverage config
 +-- src/
     +-- docker-compose.yml     # runtime stack
-    +-- litellm.config.yaml    # LiteLLM model aliases and cache settings
+    +-- gateway.config.yaml    # human-edited model, routing, and LiteLLM values
+    +-- litellm.config.yaml    # generated LiteLLM model aliases and cache settings
     +-- .env.example           # secret/config template
     +-- README.md              # NAS-oriented operations runbook
+    +-- scripts/
+        +-- generate_configs.py # regenerates runtime YAML from gateway config
     +-- router/
         +-- main.py            # FastAPI sticky router
         +-- routing.py         # routing and fallback decisions
@@ -54,7 +57,7 @@ and Redis stay internal to Docker.
         +-- sessions.py        # Redis or memory session store
         +-- health.py          # dependency health checks
         +-- metrics.py         # in-memory debug metrics
-        +-- router_config.yaml # router aliases, TTLs, timeouts, fallbacks
+        +-- router_config.yaml # generated router aliases, TTLs, timeouts, fallbacks
         +-- tests/             # pytest suite
 ```
 
@@ -112,7 +115,7 @@ Routing is deterministic and config-driven:
 
 Default aliases:
 
-| Alias | Backing model in `src/litellm.config.yaml` | Intended use |
+| Alias | Backing model in `src/gateway.config.yaml` | Intended use |
 | --- | --- | --- |
 | `fast` | `deepseek/deepseek-v4-flash` | Default low-cost requests. |
 | `deepseek-pro` | `deepseek/deepseek-v4-pro` | Stronger reasoning and analysis path. |
@@ -120,7 +123,8 @@ Default aliases:
 | `opencodego-code` | `openai/deepseek-v4-pro` via OpenCode Go | Stronger coding fallback. |
 | `ollama-cloud` | `ollama_chat/gemma3:27b` | Ollama-backed fallback path. |
 
-Default fallback chains live in `src/router/router_config.yaml`:
+Default fallback chains live in `src/gateway.config.yaml` and are generated
+into the router and LiteLLM runtime configs:
 
 ```yaml
 fast: [ollama-cloud]
@@ -152,13 +156,19 @@ Important environment values:
 | `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for OpenCode Go aliases. |
 | `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama local or cloud settings. |
 
-Edit provider aliases in:
+Edit model and routing values in `src/gateway.config.yaml`, then regenerate the
+runtime config files:
 
-- `src/litellm.config.yaml` for provider model IDs, API bases, pricing metadata,
-  and LiteLLM cache settings.
-- `src/router/router_config.yaml` for allowed aliases, fallback chains, session
-  TTL, retry delays, per-alias timeouts, classifier keywords, and aliases that
-  should receive `prompt_cache_key`.
+```bash
+python3 src/scripts/generate_configs.py
+```
+
+`src/gateway.config.yaml` controls provider model IDs, API base env names,
+pricing metadata, LiteLLM cache settings, allowed aliases, fallback chains,
+session TTL, retry delays, per-alias timeouts, classifier keywords, and aliases
+that should receive `prompt_cache_key`. The generated files
+`src/litellm.config.yaml` and `src/router/router_config.yaml` are kept committed
+for the Docker stack, but they are not the human edit point.
 
 The router validates that configured fallback aliases are allowed and that
 allowed aliases exist in the LiteLLM model list.
@@ -403,7 +413,7 @@ Requests route to an unexpected model:
 - If it is `warm-session`, change `X-Session-Id` or wait for
   `cache_ttl_seconds` to expire.
 - If it is `classified`, adjust `classifier_keywords` in
-  `src/router/router_config.yaml`.
+  `src/gateway.config.yaml`, then run `python3 src/scripts/generate_configs.py`.
 - If it is `explicit-model`, the request body supplied an allowed `model`.
 
 Fallbacks are happening:
@@ -414,9 +424,9 @@ Fallbacks are happening:
 
 Router startup fails after config edits:
 
-- Ensure every router `allowed_models` alias exists as a `model_name` in
-  `src/litellm.config.yaml`.
-- Ensure every fallback key and fallback target is listed in `allowed_models`.
+- Run `python3 src/scripts/generate_configs.py` and check for validation errors.
+- Ensure every fallback target in `src/gateway.config.yaml` names a configured
+  model alias.
 
 ## Current Scope And Future Work
 
