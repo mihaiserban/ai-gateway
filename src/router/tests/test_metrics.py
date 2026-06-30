@@ -34,6 +34,7 @@ async def test_metrics_counts_requests_and_models():
     metrics: Metrics = app.state.metrics
     assert metrics.requests_total == 2
     assert metrics.selected_model_counts == {"opencodego-fast": 1, "fast": 1}
+    assert metrics.served_model_counts == {"opencodego-fast": 1, "fast": 1}
     assert metrics.fallback_count_total == 0
 
 
@@ -63,7 +64,10 @@ async def test_metrics_counts_fallbacks():
     metrics: Metrics = app.state.metrics
     assert metrics.requests_total == 1
     assert metrics.fallback_count_total == 1
-    assert metrics.selected_model_counts == {"fast": 1}
+    # selected_model_counts tracks the originally chosen (classified) model.
+    assert metrics.selected_model_counts == {"opencodego-fast": 1}
+    # served_model_counts tracks the model that actually served the request.
+    assert metrics.served_model_counts == {"fast": 1}
 
 
 @pytest.mark.asyncio
@@ -86,7 +90,8 @@ async def test_metrics_endpoint_returns_counts():
 
     assert resp.status_code == 200
     payload = resp.json()
-    assert set(payload.keys()) == {"requests_total", "fallback_count_total", "selected_model_counts"}
+    assert set(payload.keys()) == {"requests_total", "fallback_count_total", "selected_model_counts", "served_model_counts"}
     assert payload["requests_total"] == 1
     assert payload["fallback_count_total"] == 0
     assert payload["selected_model_counts"] == {"opencodego-fast": 1}
+    assert payload["served_model_counts"] == {"opencodego-fast": 1}

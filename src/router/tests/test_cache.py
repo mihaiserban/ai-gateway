@@ -202,3 +202,49 @@ async def test_cache_key_absent_by_default(tmp_path):
 
     assert response.status_code == 200
     assert "prompt_cache_key" not in seen[0]
+
+
+@pytest.mark.asyncio
+async def test_cache_key_removed_on_fallback_to_non_allowed_alias(tmp_path):
+    cfg_path = _write_config(
+        tmp_path,
+        cache_key_aliases=["opencodego-fast"],
+        allowed_models=["opencodego-fast", "fast", "deepseek-pro", "ollama-cloud"],
+        fallbacks={
+            "opencodego-fast": ["ollama-cloud"],
+            "fast": ["ollama-cloud"],
+            "ollama-cloud": ["fast"],
+            "deepseek-pro": ["fast"],
+        },
+    )
+    seen: list[dict] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if body["model"] == "opencodego-fast":
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    transport = httpx.MockTransport(handler)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=transport,
+        config_path=str(cfg_path),
+        litellm_config_path=str(tmp_path / "missing-litellm.yaml"),
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "cache-session-5"},
+            json={"messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+        )
+
+    assert response.status_code == 200
+    assert [b["model"] for b in seen] == ["opencodego-fast", "ollama-cloud"]
+    # The allowed alias attempt carried the cache key.
+    assert seen[0]["prompt_cache_key"] == _expected_cache_key("cache-session-5")
+    # The non-allowed fallback alias must not carry it.
+    assert "prompt_cache_key" not in seen[1]

@@ -164,7 +164,7 @@ def create_app(
             fallback_count,
             original_model,
         )
-        app.state.metrics.record(current_model, fallback_count)
+        app.state.metrics.record(original_model, current_model, fallback_count)
 
         if last_response is not None:
             if is_stream and _is_success(last_response):
