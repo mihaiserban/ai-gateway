@@ -81,20 +81,33 @@ Health check:
 curl http://localhost:4100/healthz
 ```
 
-Model discovery:
+Model discovery (use a virtual key, not the master key, for agents):
 
 ```bash
 curl http://localhost:4100/v1/models \
-  -H "Authorization: Bearer $LITELLM_MASTER_KEY"
+  -H "Authorization: Bearer $VIRTUAL_KEY"
 ```
 
-Chat smoke test:
+Chat smoke test (virtual key):
+
+```bash
+curl http://localhost:4100/v1/chat/completions \
+  -H "Authorization: Bearer $VIRTUAL_KEY" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: smoke-test" \
+  -d '{
+    "messages": [{"role": "user", "content": "say OK only"}],
+    "max_tokens": 80
+  }'
+```
+
+Admin smoke test (master key, for setup/verification only):
 
 ```bash
 curl http://localhost:4100/v1/chat/completions \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
-  -H "X-Session-Id: smoke-test" \
+  -H "X-Session-Id: admin-smoke" \
   -d '{
     "messages": [{"role": "user", "content": "say OK only"}],
     "max_tokens": 80
@@ -105,6 +118,54 @@ The router adds these response headers:
 
 - `X-Gateway-Model`: selected LiteLLM alias
 - `X-Gateway-Reason`: `classified`, `explicit-model`, or `warm-session`
+- `X-Gateway-Fallback-Count`: number of fallback hops (0 when no fallback)
+- `X-Gateway-Fallback-From`: original alias, only present when a fallback occurred
+
+Health and readiness:
+
+```bash
+curl http://localhost:4100/healthz   # liveness, always 200, per-dep status
+curl http://localhost:4100/readyz    # readiness, 503 if any dep is down
+```
+
+## Virtual Keys And Model Allowlists
+
+Agents should use LiteLLM virtual keys, not the master key. Create one key
+per agent/tool with a model allowlist so a background summarizer cannot use
+an expensive alias.
+
+Create a virtual key (admin only, with the master key):
+
+```bash
+curl -X POST http://localhost:4000/key/generate \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key_alias": "codex-cli",
+    "models": ["opencodego-fast", "opencodego-code", "fast", "reasoning"],
+    "max_budget": 5.0
+  }'
+```
+
+Use the returned `key` value as the `Authorization: Bearer <key>` for that
+agent. Replace `reasoning` with an alias you have configured if it is not in
+`litellm.config.yaml`.
+
+The master key is only for admin setup (creating keys, viewing spend). Do not
+put it in agent configs.
+
+## Codex CLI Config
+
+Point Codex at the gateway with a custom model provider or
+`OPENAI_BASE_URL`:
+
+```bash
+export OPENAI_BASE_URL=http://<nas-host>:4100/v1
+export OPENAI_API_KEY=<litellm-virtual-key>
+```
+
+Codex Pro is a client entitlement; it calls this gateway as a client and is
+not configured as an upstream provider.
 
 ## Active Aliases
 
