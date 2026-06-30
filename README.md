@@ -106,26 +106,28 @@ Routing is deterministic and config-driven:
 3. Otherwise, the router uses the configured `default_model`.
 4. Retryable upstream failures can move through the configured fallback chain.
 
-Default aliases:
+Default public aliases:
 
-| Alias | Backing model in `src/gateway.config.yaml` | Intended use |
+| Alias level | Examples | Intended use |
 | --- | --- | --- |
-| `fast` | `deepseek/deepseek-v4-flash` | Default low-cost requests. |
-| `deepseek-pro` | `deepseek/deepseek-v4-pro` | Stronger reasoning and analysis path. |
-| `opencodego-fast` | `openai/kimi-k2.7-code` via OpenCode Go | Cheap coding path. |
-| `opencodego-code` | `openai/deepseek-v4-pro` via OpenCode Go | Stronger coding fallback. |
-| `ollama-cloud` | `ollama_chat/gemma3:27b` | Ollama-backed fallback path. |
+| Task aliases | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | Default interface for agents and orchestrators. |
+| Model-family aliases | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | Caller wants a model family but lets the gateway choose the provider. |
+| Provider deployment aliases | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | Debugging, forced provider selection, and package-specific routing. |
 
-Default fallback chains live in `src/gateway.config.yaml` and are generated
-into the router and LiteLLM runtime configs:
+The recommended default for package and orchestrator setup is to use task
+aliases first. For example, an orchestrator should map planning to `planner`,
+building to `coder`, quick edits to `coder-fast`, and search/simple work to
+`explorer`. Packages that need a specific model family can request a
+model-family alias such as `deepseek-v4-pro`. Provider deployment aliases are
+available as an escape hatch, but they should not be the default integration
+surface.
 
-```yaml
-fast: [ollama-cloud]
-deepseek-pro: [opencodego-code, fast]
-opencodego-fast: [fast, deepseek-pro]
-opencodego-code: [deepseek-pro, fast]
-ollama-cloud: [fast]
-```
+Fallback chains live in `src/gateway.config.yaml` and are generated into the
+router and LiteLLM runtime configs. They prefer the same model family on another
+provider before moving to a neighboring task role.
+
+The catalog also records `reasoning_level` as guidance for humans and packages:
+`low`, `medium`, or `high`. This field does not rewrite request parameters.
 
 ## Configuration
 

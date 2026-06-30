@@ -10,15 +10,29 @@ The canonical machine-readable source of truth for the gateway is
 python3 src/scripts/generate_configs.py
 ```
 
-## Model roles
+## Model contract
 
-| Role | Default alias | Purpose |
+The gateway exposes three levels of aliases:
+
+| Level | Examples | Use when |
 | --- | --- | --- |
-| Explorer | `explorer` | Fast/cheap search and simple tasks |
-| Planner | `planner` | Strong reasoning for planning and analysis |
-| Coder | `coder` | Primary coding workhorse |
-| Coder fast | `coder-fast` | Quick edits and commits |
-| Vision | `vision` | Multimodal image understanding |
+| Task alias | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | A tool or orchestrator wants the gateway's recommended default for a job. |
+| Model-family alias | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | A caller wants a specific model family but not a specific provider. |
+| Provider deployment alias | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | A caller needs to force or debug one provider deployment. |
+
+`model_info.reasoning_level` is catalog metadata with values `none`, `low`,
+`medium`, or `high`. It is not translated into provider-specific request
+parameters by the router.
+
+Recommended orchestrator mapping:
+
+| Orchestrator role | Gateway alias | Reasoning level |
+| --- | --- | --- |
+| Explore/search/simple work | `explorer` | `low` |
+| Plan/reason/analyze | `planner` | `high` |
+| Build/code | `coder` | `medium` |
+| Quick edits/commits | `coder-fast` | `low` |
+| Image input | `vision` | `medium` |
 
 ## Provider wiring
 
@@ -121,48 +135,54 @@ adds `additional_drop_params: [reasoningSummary]` for the aliases that need it.
 
 ## Active gateway model aliases
 
-| Alias | Provider | LiteLLM model | Timeout (s) | Fallbacks | Input cost / token | Output cost / token | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `explorer` | Ollama | `ollama_chat/deepseek-v4-flash` | 60 | `explorer-ds`, `explorer-ocg` | 0.0 | 0.0 | Default explorer |
-| `explorer-ds` | DeepSeek | `deepseek/deepseek-v4-flash` | 60 | `explorer-ocg` | 0.00000014 | 0.00000028 | Paid fallback |
-| `explorer-ocg` | OpenCode Go | `openai/deepseek-v4-flash` | 60 | — | 0.0 | 0.0 | Drops `reasoningSummary` |
-| `planner` | Ollama | `ollama_chat/glm-5.2` | 120 | `planner-ocg`, `coder` | 0.0 | 0.0 | Default planner |
-| `planner-ocg` | OpenCode Go | `openai/glm-5.2` | 120 | `coder` | 0.0 | 0.0 | Drops `reasoningSummary` |
-| `coder` | Ollama | `ollama_chat/kimi-k2.7-code` | 120 | `coder-ocg`, `coder-dsp`, `coder-dsp-ds` | 0.0 | 0.0 | Default model for the gateway |
-| `coder-ocg` | OpenCode Go | `openai/kimi-k2.7-code` | 120 | `coder-dsp`, `coder-dsp-ds` | 0.0 | 0.0 | Drops `reasoningSummary` |
-| `coder-dsp` | Ollama | `ollama_chat/deepseek-v4-pro` | 120 | `coder-dsp-ds` | 0.0 | 0.0 | Strong local reasoning fallback |
-| `coder-dsp-ds` | DeepSeek | `deepseek/deepseek-v4-pro` | 120 | — | 0.00000028 | 0.00000056 | Paid reasoning fallback |
-| `coder-fast` | Ollama | `ollama_chat/deepseek-v4-flash` | 60 | `coder-fast-k26`, `coder` | 0.0 | 0.0 | Fast coding edits |
-| `coder-fast-k26` | Ollama | `ollama_chat/kimi-k2.6` | 60 | `coder` | 0.0 | 0.0 | Alternative fast model |
-| `vision` | Ollama | `ollama_chat/kimi-k2.6` | 120 | `vision-ocg`, `coder` | 0.0 | 0.0 | Vision input |
-| `vision-ocg` | OpenCode Go | `openai/kimi-k2.6` | 120 | `coder` | 0.0 | 0.0 | Drops `reasoningSummary` |
+| Alias | Alias level | Reasoning level | Target/provider model | Timeout (s) | Fallbacks |
+| --- | --- | --- | --- | --- | --- |
+| `deepseek-v4-flash-ollama` | provider-deployment | low | `ollama_chat/deepseek-v4-flash` | 60 | — |
+| `deepseek-v4-flash-deepseek` | provider-deployment | low | `deepseek/deepseek-v4-flash` | 60 | — |
+| `deepseek-v4-flash-opencodego` | provider-deployment | low | `openai/deepseek-v4-flash` | 60 | — |
+| `glm-5.2-ollama` | provider-deployment | high | `ollama_chat/glm-5.2` | 120 | — |
+| `glm-5.2-opencodego` | provider-deployment | high | `openai/glm-5.2` | 120 | — |
+| `kimi-k2.7-code-ollama` | provider-deployment | medium | `ollama_chat/kimi-k2.7-code` | 120 | — |
+| `kimi-k2.7-code-opencodego` | provider-deployment | medium | `openai/kimi-k2.7-code` | 120 | — |
+| `deepseek-v4-pro-ollama` | provider-deployment | high | `ollama_chat/deepseek-v4-pro` | 120 | — |
+| `deepseek-v4-pro-deepseek` | provider-deployment | high | `deepseek/deepseek-v4-pro` | 120 | — |
+| `kimi-k2.6-ollama` | provider-deployment | low | `ollama_chat/kimi-k2.6` | 60 | — |
+| `kimi-k2.6-opencodego` | provider-deployment | low | `openai/kimi-k2.6` | 120 | — |
+| `deepseek-v4-flash` | model-family | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego` |
+| `glm-5.2` | model-family | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `kimi-k2.7-code` |
+| `kimi-k2.7-code` | model-family | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro` |
+| `deepseek-v4-pro` | model-family | high | `ollama_chat/deepseek-v4-pro` | 120 | `deepseek-v4-pro-deepseek` |
+| `kimi-k2.6` | model-family | low | `ollama_chat/kimi-k2.6` | 60 | `kimi-k2.6-opencodego` |
+| `explorer` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego` |
+| `planner` | task-alias | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `kimi-k2.7-code` |
+| `coder` | task-alias | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro`, `deepseek-v4-pro-deepseek` |
+| `coder-fast` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `kimi-k2.6`, `coder` |
+| `vision` | task-alias | medium | `ollama_chat/kimi-k2.6` | 120 | `kimi-k2.6-opencodego`, `coder` |
 
 ## Fallback chains
 
 ```text
 explorer
-  -> explorer-ds
-    -> explorer-ocg
+  -> deepseek-v4-flash-deepseek
+  -> deepseek-v4-flash-opencodego
 
 planner
-  -> planner-ocg
-    -> coder
-      -> coder-ocg
-        -> coder-dsp
-          -> coder-dsp-ds
-
-coder-fast
-  -> coder-fast-k26
-    -> coder
+  -> glm-5.2-opencodego
+  -> kimi-k2.7-code
 
 coder
-  -> coder-ocg
-    -> coder-dsp
-      -> coder-dsp-ds
+  -> kimi-k2.7-code-opencodego
+  -> deepseek-v4-pro
+  -> deepseek-v4-pro-deepseek
+
+coder-fast
+  -> deepseek-v4-flash-deepseek
+  -> kimi-k2.6
+  -> coder
 
 vision
-  -> vision-ocg
-    -> coder
+  -> kimi-k2.6-opencodego
+  -> coder
 ```
 
 ## Runtime configuration
