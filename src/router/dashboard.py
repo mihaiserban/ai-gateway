@@ -170,6 +170,7 @@ where {WINDOW_FILTER}
 TOP_MODELS_SQL = f"""
 select
     served_model,
+    provider_model,
     count(*)::int as requests,
     coalesce(sum(prompt_tokens), 0)::int as prompt_tokens,
     coalesce(sum(completion_tokens), 0)::int as completion_tokens,
@@ -178,7 +179,7 @@ select
     coalesce(avg(latency_ms), 0)::float as avg_latency_ms
 from gateway_usage_events
 where {WINDOW_FILTER}
-group by served_model
+group by served_model, provider_model
 order by total_tokens desc, requests desc, served_model asc
 limit 10
 """
@@ -416,8 +417,9 @@ DASHBOARD_HTML = """<!doctype html>
 
     function renderModels(rows) {
       const max = Math.max(1, ...rows.map((row) => row.total_tokens || 0));
-      document.getElementById("models").innerHTML = table(["Model", "Requests", "Tokens", "Spend"], rows.map((row) => [
-        `<span class="mono">${escapeHtml(row.served_model)}</span>`,
+      document.getElementById("models").innerHTML = table(["Provider / Model", "Alias", "Requests", "Tokens", "Spend"], rows.map((row) => [
+        `<span class="mono">${escapeHtml(row.provider_model || row.served_model)}</span>`,
+        `<span class="badge">${escapeHtml(row.served_model)}</span>`,
         fmt.format(row.requests || 0),
         `${fmt.format(row.total_tokens || 0)}<div class="bar"><span style="width:${Math.round(((row.total_tokens || 0) / max) * 100)}%"></span></div>`,
         usd.format(row.estimated_cost_usd || 0),
@@ -467,10 +469,11 @@ DASHBOARD_HTML = """<!doctype html>
 
     function _memoryLabel(value) {
       if (!value) return "-";
-      const match = String(value).match(/^([0-9.]+)\\s*([KMGT]?B?)$/i);
+      const match = String(value).match(/^([0-9.]+)([KMGT]?B?)$/i);
       if (!match) return value;
       const [, num, suffix] = match;
-      const unit = suffix.toUpperCase() || "B";
+      const letter = suffix ? suffix.charAt(0).toUpperCase() : "";
+      const unit = letter ? `${letter}B` : "B";
       return `${num} ${unit}`;
     }
 
