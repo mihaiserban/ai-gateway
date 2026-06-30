@@ -54,7 +54,7 @@ All findings from the initial MVP review have been addressed:
 - [x] Implement true SSE streaming passthrough for `/v1/chat/completions`.
 - [x] Preserve streaming headers and content type.
 - [x] Add tests for `stream: true`.
-- [ ] Verify streaming through Docker with `curl -N`.
+- [x] Verify streaming through Docker with `curl -N`.
 
 ## P1: Config
 
@@ -67,11 +67,11 @@ All findings from the initial MVP review have been addressed:
 
 ## P1: Auth And Access
 
-- [ ] Create one LiteLLM virtual key per agent/tool.
+- [x] Create one LiteLLM virtual key per agent/tool.
 - [x] Stop using the master key in runbook examples except admin setup.
 - [x] Add model allowlists per key.
 - [x] Document Codex CLI config using the gateway URL and a virtual key.
-- [ ] Add a smoke test using a virtual key, not the master key.
+- [x] Add a smoke test using a virtual key, not the master key.
 
 ## P2: Cost And Observability
 
@@ -86,7 +86,7 @@ All findings from the initial MVP review have been addressed:
 
 ## P2: Caching
 
-- [ ] Verify LiteLLM Redis cache hits through logs or API metadata.
+- [x] Verify LiteLLM Redis cache hits through logs or API metadata.
 - [x] Add cache-related response headers if available.
 - [x] Add stable `prompt_cache_key` only for providers that support it.
 - [x] Keep semantic caching out until basic cache metrics are proven.
@@ -116,3 +116,14 @@ All findings from the initial MVP review have been addressed:
 - Docker stack health: router, LiteLLM, Postgres, and Redis reported healthy.
 - Live gateway smoke test: `http://localhost:4100/v1/chat/completions` returned
   HTTP `200` through the router.
+- Streaming through Docker verified with `curl -N`: SSE chunks arrive in
+  order with `content-type: text/event-stream` and gateway headers.
+- Virtual keys created per agent/tool (`codex-cli`, `summarizer`) with model
+  allowlists; allowlist enforcement confirmed (summarizer key blocked from
+  `deepseek-pro` with HTTP 403).
+- Virtual-key smoke test added at `router/tests/test_virtual_key.py` proving
+  the router forwards `Authorization` to LiteLLM and surfaces the upstream
+  403 allowlist denial; master-key path still works.
+- LiteLLM Redis cache hits verified: second identical request returns
+  `x-litellm-cache-key` header; `/metrics` `cache_counts` records miss/hit
+  instead of all `unknown`.
