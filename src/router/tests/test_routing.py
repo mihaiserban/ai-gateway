@@ -1,4 +1,32 @@
-from router.routing import RouteConfig, choose_model, next_fallback
+from router.routing import DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS, RouteConfig, choose_model, next_fallback
+
+
+def test_default_allowed_models_does_not_include_vision():
+    assert "vision" not in DEFAULT_ALLOWED_MODELS
+
+
+def test_default_fallbacks_does_not_include_vision():
+    assert "vision" not in DEFAULT_FALLBACKS
+
+
+def test_classified_vision_maps_to_fast_when_vision_disallowed():
+    config = RouteConfig(cache_ttl_seconds=600)
+    request = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is in this screenshot?"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                ],
+            }
+        ]
+    }
+
+    decision = choose_model(request, session=None, now=1_000.0, config=config)
+
+    assert decision.model == "fast"
+    assert decision.reason == "classified"
 
 
 def test_keeps_warm_session_model_inside_ttl():

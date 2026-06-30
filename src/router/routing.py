@@ -12,7 +12,6 @@ DEFAULT_ALLOWED_MODELS = {
     "opencodego-fast",
     "opencodego-code",
     "ollama-cloud",
-    "vision",
 }
 
 DEFAULT_FALLBACKS = {
@@ -21,7 +20,6 @@ DEFAULT_FALLBACKS = {
     "opencodego-fast": ["fast", "deepseek-pro"],
     "opencodego-code": ["deepseek-pro", "fast"],
     "ollama-cloud": ["fast"],
-    "vision": ["deepseek-pro"],
 }
 
 
