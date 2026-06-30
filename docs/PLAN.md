@@ -8,10 +8,19 @@ visibility to avoid surprises.
 
 ## Source-Backed Assumptions
 
+- This plan chooses LiteLLM as the runtime gateway and treats Portkey as the
+  product benchmark. Both are valid AI gateways, but stacking Portkey in front
+  of LiteLLM would duplicate provider routing, retries, fallbacks, caching,
+  guardrails, key handling, and logs in a small personal deployment.
 - LiteLLM remains the provider adapter and key/spend layer. Its proxy exposes an
   OpenAI-format gateway across many providers, supports model aliases, Redis
   caching, router fallbacks, virtual keys, model access limits, and provider or
   model budgets.
+- Portkey's OSS gateway is useful prior art for the shape of this project:
+  OpenAI-compatible edge API, config-driven routing, retries/fallbacks,
+  guardrails, local console/logs, smart caching, and many provider integrations.
+  Borrow those product ideas, not the whole stack, unless LiteLLM blocks a
+  required provider or policy.
 - Keep Postgres. LiteLLM documents Postgres as the database for virtual keys,
   users, budgets, and per-request usage tracking, and its database Docker image
   is designed for Postgres-backed proxy deployments. SQLite is not the hardened
@@ -26,6 +35,55 @@ visibility to avoid surprises.
 - Prefer Chat Completions compatibility at the outside edge because most coding
   agents still speak `/v1/chat/completions`. The router can pass through
   `/v1/models` and later add `/v1/responses` once the clients need it.
+
+## Runtime Decision
+
+### Recommended Runtime: LiteLLM + Thin Router
+
+Use LiteLLM for provider normalization, model aliases, virtual keys, spend
+tracking, Redis cache integration, fallbacks, and the admin UI. Put a small
+FastAPI router in front only for personal policy that is specific to this
+project: cache-aware model stickiness, deterministic task classification,
+redaction before vendor egress, and a stable single endpoint for agents.
+
+Why this stays lightweight:
+
+- The repo already runs LiteLLM with Docker, Postgres, and Redis.
+- LiteLLM's upstream Docker compose already assumes Postgres for proxy state;
+  this matches the existing local stack.
+- LiteLLM supports the provider-specific oddities this plan needs, including
+  OpenAI-compatible custom bases, Ollama, Z.AI, DeepSeek, GitHub Copilot, and
+  OpenCode integration notes.
+- The custom code remains small and replaceable. If LiteLLM later gains native
+  cache-aware sticky routing, the sidecar can shrink or disappear.
+
+### Portkey-Inspired Features To Keep
+
+Portkey is a good reference for what a polished personal gateway should feel
+like, especially because its OSS gateway emphasizes a single OpenAI-compatible
+edge API, routing configs, retries/fallbacks, guardrails, smart caching, local
+logs, and a tiny local Docker/Node footprint.
+
+Copy these ideas into the LiteLLM-based build:
+
+- Config-driven routes and fallback policy instead of hard-coded logic.
+- Explicit guardrail/redaction layer before requests leave the NAS.
+- Local request console/log summaries, but without prompt body logging by
+  default.
+- Simple cache controls first; semantic cache only after plain prefix/session
+  caching is measured.
+- Cost/pricing awareness in docs and dashboards, using upstream model pricing
+  metadata where available.
+
+### Alternative Runtime: Portkey Only
+
+Portkey can be revisited if the personal priority shifts toward guardrails,
+local console UX, semantic caching, and config-driven policy over LiteLLM's
+provider-specific adapters and Postgres-backed virtual-key/spend model.
+
+Do not run Portkey and LiteLLM together in the first implementation. If Portkey
+is evaluated, make it a separate spike with the same provider matrix and
+verification checklist, then choose one gateway as the single provider adapter.
 
 ## Architecture
 
@@ -202,6 +260,9 @@ docs/
 
 - Keep Postgres in `docker-compose.yml`; do not replace it with SQLite.
 - Make LiteLLM `4000` internal-only.
+- Record the runtime choice in the README: LiteLLM is the active gateway;
+  Portkey is prior art and an optional future spike, not another container in
+  the default stack.
 - Add provider aliases for OpenAI, DeepSeek V4, Z.AI, Ollama, OpenCode Go,
   Copilot, and optional GitHub Models.
 - Add `additional_drop_params: ["reasoningSummary"]` to aliases used by
@@ -249,6 +310,10 @@ docs/
 
 ## Documentation Used
 
+- [Portkey AI Gateway repository](https://github.com/Portkey-AI/gateway)
+- [Portkey Gateway Docker compose](https://raw.githubusercontent.com/Portkey-AI/gateway/main/docker-compose.yaml)
+- [LiteLLM repository](https://github.com/BerriAI/litellm)
+- [LiteLLM Docker compose](https://raw.githubusercontent.com/BerriAI/litellm/main/docker-compose.yml)
 - [LiteLLM proxy configuration](https://docs.litellm.ai/docs/proxy/configs)
 - [LiteLLM Docker quick start](https://docs.litellm.ai/docs/proxy/docker_quick_start)
 - [LiteLLM database contents](https://docs.litellm.ai/docs/proxy/db_info)
