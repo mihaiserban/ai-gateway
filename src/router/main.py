@@ -373,6 +373,8 @@ def _log_request(
 
 def _should_fallback_response(response: httpx.Response) -> bool:
     status_code = response.status_code
+    if 200 <= status_code < 300:
+        return False
     if status_code in {500, 502, 503, 504}:
         return True
 
