@@ -180,6 +180,8 @@ def _render_model(deployment: Deployment) -> dict[str, Any]:
         params["api_base"] = _env_ref(deployment.api_base_env)
     if deployment.api_key_env:
         params["api_key"] = _env_ref(deployment.api_key_env)
+    if deployment.drop_params:
+        params["additional_drop_params"] = list(deployment.drop_params)
 
     return {
         "model_name": deployment.id,

@@ -67,6 +67,8 @@ model_list:
     model: openai/deepseek-v4-flash
     api_base: os.environ/OPENCODE_GO_API_BASE
     api_key: os.environ/OPENCODE_GO_API_KEY
+    additional_drop_params:
+    - reasoningSummary
   model_info:
     provider: opencode-go
     connection: opencode-go
@@ -76,6 +78,8 @@ model_list:
     model: openai/glm-5.2
     api_base: os.environ/OPENCODE_GO_API_BASE
     api_key: os.environ/OPENCODE_GO_API_KEY
+    additional_drop_params:
+    - reasoningSummary
   model_info:
     provider: opencode-go
     connection: opencode-go
@@ -85,6 +89,8 @@ model_list:
     model: openai/kimi-k2.7-code
     api_base: os.environ/OPENCODE_GO_API_BASE
     api_key: os.environ/OPENCODE_GO_API_KEY
+    additional_drop_params:
+    - reasoningSummary
   model_info:
     provider: opencode-go
     connection: opencode-go
@@ -94,6 +100,8 @@ model_list:
     model: openai/kimi-k2.6
     api_base: os.environ/OPENCODE_GO_API_BASE
     api_key: os.environ/OPENCODE_GO_API_KEY
+    additional_drop_params:
+    - reasoningSummary
   model_info:
     provider: opencode-go
     connection: opencode-go

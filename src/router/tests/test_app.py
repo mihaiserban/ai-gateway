@@ -307,6 +307,18 @@ async def test_no_active_deployments_returns_diagnostic_503(monkeypatch, simple_
     payload = response.json()
     assert payload["error"]["type"] == "gateway_no_active_deployment"
     assert payload["error"]["model"] == "kimi-k2.7-code"
+    inactive_reasons = payload["error"]["inactive_reasons"]
+    assert isinstance(inactive_reasons, dict)
+    assert "ollama-local.kimi-k2.7-code" in inactive_reasons
+    assert inactive_reasons["ollama-local.kimi-k2.7-code"] == [
+        "missing env OLLAMA_API_BASE",
+        "missing env OLLAMA_API_KEY",
+    ]
+    assert "opencode-go.kimi-k2.7-code" in inactive_reasons
+    assert inactive_reasons["opencode-go.kimi-k2.7-code"] == [
+        "missing env OPENCODE_GO_API_BASE",
+        "missing env OPENCODE_GO_API_KEY",
+    ]
 
 
 @pytest.mark.asyncio

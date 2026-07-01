@@ -675,7 +675,7 @@ def _gateway_error(
     message: str,
     requested_model: str,
     extra_headers: dict[str, str],
-    inactive_reasons: list[dict[str, Any]] | None = None,
+    inactive_reasons: dict[str, list[str]] | None = None,
 ) -> JSONResponse:
     error: dict[str, Any] = {"type": error_type, "message": message, "model": requested_model}
     if inactive_reasons is not None:
@@ -687,11 +687,11 @@ def _gateway_error(
     )
 
 
-def _inactive_reasons(config: Any, requested_model: str) -> list[dict[str, Any]]:
+def _inactive_reasons(config: Any, requested_model: str) -> dict[str, list[str]]:
     from router.live_catalog import deployment_is_active
 
     env = os.environ
-    reasons: list[dict[str, Any]] = []
+    reasons: dict[str, list[str]] = {}
     deployment_ids = config.registry_models.get(requested_model, [])
     if not deployment_ids:
         combo = config.combos.get(requested_model)
@@ -700,11 +700,11 @@ def _inactive_reasons(config: Any, requested_model: str) -> list[dict[str, Any]]
     for dep_id in deployment_ids:
         dep = config.deployments.get(dep_id)
         if dep is None:
-            reasons.append({"deployment_id": dep_id, "reason": "not_configured"})
+            reasons[dep_id] = ["not_configured"]
             continue
         active, missing = deployment_is_active(dep, env)
         if not active:
-            reasons.append({"deployment_id": dep_id, "reason": "missing_env", "missing_env": missing})
+            reasons[dep_id] = [f"missing env {name}" for name in missing]
     return reasons
 
 

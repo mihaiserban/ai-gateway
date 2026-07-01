@@ -24,6 +24,23 @@ def test_render_litellm_config_emits_configured_deployment_ids():
     assert "coder" not in model_names
 
 
+def test_render_litellm_config_emits_additional_drop_params_for_opencode_go():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
+
+    litellm_config = render_litellm_config(config)
+    opencode_go_entries = [
+        entry for entry in litellm_config["model_list"] if entry["model_name"].startswith("opencode-go.")
+    ]
+    assert opencode_go_entries, "expected at least one opencode-go deployment"
+    for entry in opencode_go_entries:
+        assert entry["litellm_params"]["additional_drop_params"] == ["reasoningSummary"]
+    # Providers without drop_params must not emit the key.
+    ollama_entry = next(
+        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-local.kimi-k2.7-code"
+    )
+    assert "additional_drop_params" not in ollama_entry["litellm_params"]
+
+
 def test_render_litellm_config_drops_none_api_base_for_envless_provider():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
 

@@ -76,7 +76,7 @@ OpenAI-compatible clients should point at `http://<host>:4100/v1`.
 
 Use a LiteLLM virtual key per agent/tool; never give agents the master key. Configure per-agent model allowlists and budgets in [src/README.md § Virtual Keys](src/README.md#virtual-keys-and-model-allowlists).
 
-Prefer task aliases when selecting a model: `explorer`, `planner`, `coder`, `coder-fast`, `vision`. Use model-family aliases when you need a specific model with provider fallback; use provider-deployment aliases only to force one backend. Full table and guidance are in [src/README.md § Active Aliases](src/README.md#active-aliases).
+Prefer combos when selecting a model: `explorer`, `planner`, `coder`, `coder-fast`, `vision`. Use registry-model ids when you need a specific model with provider fallback; use connection-model ids only to force one backend. Full table and guidance are in [src/README.md § Live Model Catalog](src/README.md#live-model-catalog).
 
 For opencode, sync the gateway catalog into `~/.config/opencode/opencode.json`:
 
