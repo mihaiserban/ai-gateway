@@ -1,10 +1,10 @@
 # agent-ai-gateway
 
 Personal OpenAI-compatible AI gateway for local agents. The stack exposes one
-stable endpoint, routes requests to cheaper or stronger model aliases, keeps
-warm conversations on the same model, redacts obvious secrets before provider
-egress, and delegates provider adapters, virtual keys, caching, budgets, and
-spend tracking to LiteLLM.
+stable endpoint, serves a live model catalog (combos, registry models, and
+connection models), keeps warm conversations on the same deployment, redacts
+obvious secrets before provider egress, and delegates provider adapters,
+virtual keys, caching, budgets, and spend tracking to LiteLLM.
 
 The deployment target is a small Docker stack on a Synology NAS or another
 always-on LAN/Tailscale host.
@@ -22,18 +22,20 @@ sticky-router (:4100, FastAPI)
   v
 LiteLLM (:4000)
   |
+  +--> Ollama (local/cloud)
   +--> DeepSeek
   +--> OpenCode Go
-  +--> Ollama Cloud/local
   +--> future providers
 
 Redis     -> LiteLLM cache state and router session stickiness
 Postgres  -> LiteLLM virtual keys, budgets, spend, and UI state
 ```
 
-Only the router publishes a host port by default, and it is bound to
-`127.0.0.1:4100` so it is local to the Docker host. LiteLLM, Postgres, and
-Redis stay internal to Docker.
+Only the router publishes a host port by default. The compose file maps
+`4100:4100` on the Docker host; keep that host behind Tailscale, a VPN, or a
+private LAN firewall. LiteLLM, Postgres, and Redis stay internal to Docker.
+For localhost-only development, change the router port mapping to
+`127.0.0.1:4100:4100`.
 
 ## Repository Layout
 
@@ -44,12 +46,13 @@ Redis stay internal to Docker.
 +-- pyproject.toml             # lint, type-check, test, and coverage config
 +-- src/
     +-- docker-compose.yml     # runtime stack
-    +-- gateway.config.yaml    # human-edited model, routing, and LiteLLM values
-    +-- litellm.config.yaml    # generated LiteLLM model aliases and cache settings
+    +-- gateway.config.yaml    # human-edited providers, connections, combos, router, LiteLLM
+    +-- litellm.config.yaml    # generated LiteLLM model deployments and cache settings
     +-- .env.example           # secret/config template
     +-- README.md              # NAS-oriented operations runbook
     +-- scripts/
-        +-- generate_configs.py # regenerates runtime YAML from gateway config
+        +-- gateway.py         # gateway CLI: generate, doctor, explain, models, setup
+        +-- generate_configs.py # legacy regenerator (delegates to gateway.py generate)
     +-- router/
         +-- main.py            # FastAPI sticky router
         +-- routing.py         # routing and fallback decisions
@@ -57,7 +60,7 @@ Redis stay internal to Docker.
         +-- sessions.py        # Redis or memory session store
         +-- health.py          # dependency health checks
         +-- metrics.py         # in-memory debug metrics
-        +-- router_config.yaml # generated router aliases, TTLs, timeouts, fallbacks
+        +-- router_config.yaml # generated router deployments, TTLs, timeouts
         +-- tests/             # pytest suite
 ```
 
@@ -76,8 +79,8 @@ The router intentionally implements a small OpenAI-compatible surface:
 
 | Endpoint | Method | Behavior |
 | --- | --- | --- |
-| `/v1/chat/completions` | `POST` | Honors the requested model alias or uses the configured default, redacts prompt secrets, forwards to LiteLLM, supports non-streaming and SSE streaming responses, and retries configured fallback aliases for retryable upstream failures. |
-| `/v1/models` | `GET` | Proxies model discovery to LiteLLM. |
+| `/v1/chat/completions` | `POST` | Resolves the requested model to an ordered deployment list, redacts prompt secrets, forwards to LiteLLM, supports non-streaming and SSE streaming responses, and falls back to the next deployment on retryable upstream failures. |
+| `/v1/models` | `GET` | Returns the live model catalog (combos, registry models, connection models) filtered by active deployments. Use `?view=all\|combos\|registry\|connections` to select a slice. |
 | `/healthz` | `GET` | Liveness-style health; returns HTTP `200` with per-dependency status. |
 | `/readyz` | `GET` | Readiness; returns HTTP `503` when an enabled dependency is degraded. |
 | `/metrics` | `GET` | In-memory debug counters for routing, fallbacks, cache observations, and provider availability. |
@@ -104,11 +107,12 @@ Successful chat responses include gateway routing headers:
 
 | Header | Meaning |
 | --- | --- |
-| `X-Gateway-Model` | Alias actually served by LiteLLM after fallback, if any. |
-| `X-Gateway-Provider-Model` | Resolved provider/model string (e.g. `openai/kimi-k2.7-code`). |
-| `X-Gateway-Reason` | `explicit-model`, `warm-session`, or `default-model`. |
-| `X-Gateway-Fallback-Count` | Number of router fallback hops. |
-| `X-Gateway-Fallback-From` | Original selected alias, present only after fallback. |
+| `X-Gateway-Requested-Model` | The model id the caller requested. |
+| `X-Gateway-Model-Kind` | `combo`, `registry-model`, or `connection-model`. |
+| `X-Gateway-Served-Deployment` | The deployment id that served the response (e.g. `ollama-cloud.kimi-k2.7-code`). |
+| `X-Gateway-Fallback-Count` | Number of fallback hops (0 when no fallback). |
+| `X-Gateway-Attempted-Models` | Comma-separated deployment ids tried, in order. |
+| `X-Gateway-Fallback-From` | First attempted deployment id, present only after a fallback. |
 
 LiteLLM cache headers such as `x-litellm-cache-hit` and
 `x-litellm-cache-key` are preserved when upstream returns them.
@@ -158,51 +162,58 @@ limit 20;
 "
 ```
 
+## Model Kinds
+
+The gateway organizes models in five kinds. Each kind answers a different
+question about where a model id comes from and how it is routed.
+
+| Kind | Description |
+| --- | --- |
+| **Provider** | Reusable adapter and registry metadata. Declares the LiteLLM prefix, API base/key env vars, and the catalog of model ids that provider can serve. |
+| **Connection** | One configured local endpoint, account, or key for a provider. Has priority, stability, and concurrency knobs and selects which registry models it serves. |
+| **Combo** | Curated public model with fallback/scoring. A stable id (`explorer`, `planner`, `coder`, ...) that maps to ordered `(connection, model)` candidates and a scoring policy. |
+| **Registry model** | A provider model id served by active connections. Examples: `kimi-k2.7-code`, `deepseek-v4-pro`, `glm-5.2`. The router resolves it to the best active deployment at request time. |
+| **Connection model** | Explicit qualified deployment id in the form `<connection>.<model>`, e.g. `ollama-cloud.kimi-k2.7-code`. Forces one connection with no combo/registry fallback. |
+| **Client** | Local harness setup target (`codex`, `claude-code`, `opencode`, `pi`). Used by the `gateway setup` CLI to render harness config from the live catalog. |
+
+Combos and registry models share the `/v1/models` namespace. See
+[docs/models.md](docs/models.md) for the full provider/connection/combo
+reference, live catalog tables, and scoring weights.
+
 ## Routing Behavior
 
 Routing is deterministic and config-driven:
 
-1. If the request body contains a `model` value that is in `allowed_models`, the
-   router uses that alias.
-2. Otherwise, if `X-Session-Id` or the derived fallback session is warm, the
-   router reuses the previous successful model for that session.
-3. Otherwise, the router uses the configured `default_model`.
-4. Retryable upstream failures can move through the configured fallback chain.
+1. The router resolves the requested model id to an ordered list of
+   deployments:
+   - **Combo** -> its candidate `(connection, model)` pairs, scored per the
+     combo's scoring weights (health, latency, quota, stability, connection
+     density, priority) and filtered to active connections.
+   - **Registry model** -> every active connection whose provider registry
+     lists that model id, ordered by the same scoring inputs.
+   - **Connection model** -> exactly the one named deployment.
+2. If no `model` is supplied and `X-Session-Id` is warm, the router reuses the
+   previous successful deployment for that session.
+3. If no `model` is supplied and the session is cold, the router uses the
+   configured `default_model` (`coder` by default).
+4. Deployments are tried in order. Fallback only happens on retryable upstream
+   failures (capacity, quota, billing, entitlement, missing-model,
+   context-limit, unsupported-parameter). Caller-side auth, virtual-key
+   budget, virtual-key model allowlist, and malformed-request errors do not
+   fall back.
 
-Fallbacks trigger for provider-side capacity, quota, billing, entitlement,
-missing-model, context-limit, and unsupported-parameter errors. Caller-side
-auth, virtual-key budget, virtual-key model allowlist, and malformed request
-errors do not fallback because that would route around the caller's access
-controls or repeat an invalid request.
+LiteLLM is an execution adapter: the router rewrites catalog ids to the
+internal deployment id (e.g. `ollama-cloud.kimi-k2.7-code`) before calling
+LiteLLM. Because of this, LiteLLM virtual keys must allow the internal
+deployment ids they may use, such as `ollama-cloud.kimi-k2.7-code` and
+`deepseek-api.deepseek-v4-pro`. When a combo or registry model falls back,
+the served deployment may be any of its candidates, so include every allowed
+deployment id in the virtual key allowlist. Use
+`python3 src/scripts/gateway.py explain <model>` to list candidate deployments.
 
-Default public aliases:
-
-| Alias level | Examples | Intended use |
-| --- | --- | --- |
-| Task aliases | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | Default interface for agents and orchestrators. |
-| Model-family aliases | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | Caller wants an exact model family and allows provider fallback. |
-| Provider deployment aliases | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | Caller wants to force one provider with no gateway fallback. |
-
-The recommended default for package and orchestrator setup is to use task
-aliases first. For example, an orchestrator should map planning to `planner`,
-building to `coder`, quick edits to `coder-fast`, and search/simple work to
-`explorer`. Packages that need direct model selection can request an exact
-model-family alias such as `deepseek-v4-pro`, `deepseek-v4-flash`,
-`kimi-k2.7-code`, or `kimi-k2.6`. Provider deployment aliases are available as
-an escape hatch when a caller needs to force one backend.
-
-The selection rule is: choose a task alias when you know the job, choose a
-model-family alias when you know the model and want provider fallback, and
-choose a provider deployment alias only when debugging or forcing one backend.
-
-Fallback chains live in `src/gateway.config.yaml` and are generated into the
-router and LiteLLM runtime configs. Task aliases target the preferred exact
-model-family alias, but their fallback chains use concrete alternate provider
-deployments so a provider outage does not immediately route back to the same
-provider.
-
-The catalog also records `reasoning_level` as guidance for humans and packages:
-`low`, `medium`, or `high`. This field does not rewrite request parameters.
+The catalog also records `reasoning_level` as guidance for humans and
+packages: `low`, `medium`, or `high`. This field does not rewrite request
+parameters.
 
 ## Configuration
 
@@ -222,33 +233,70 @@ Important environment values:
 | `LITELLM_SALT_KEY` | LiteLLM encryption salt for stored credentials. Do not rotate casually after creating keys or credentials. |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | Postgres settings for LiteLLM state. |
 | `REDIS_PASSWORD`, `REDIS_URL` | Redis auth and connection string for LiteLLM cache and router sessions. |
-| `DEEPSEEK_API_KEY` | Provider key for `fast` and `deepseek-pro`. |
-| `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for OpenCode Go aliases. |
-| `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama local or cloud settings. |
+| `DEEPSEEK_API_KEY` | Provider key for `deepseek-api.*` deployments. |
+| `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for `opencode-go.*` deployments. |
+| `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama Cloud settings for `ollama-cloud.*` deployments. |
+| `VIRTUAL_KEY` | Default LiteLLM virtual key written into client configs by `gateway setup`. |
 
-Edit model and routing values in `src/gateway.config.yaml`, then regenerate the
-runtime config files:
+Edit providers, connections, combos, router, and LiteLLM values in
+`src/gateway.config.yaml`, then regenerate the runtime config files:
 
 ```bash
-python3 src/scripts/generate_configs.py
-python3 src/scripts/generate_opencode_config.py
+python3 src/scripts/gateway.py generate
 ```
 
-`src/gateway.config.yaml` controls provider model IDs, API base env names,
-pricing metadata, LiteLLM cache settings, allowed aliases, fallback chains,
-default model, session TTL, retry delays, per-alias timeouts, and aliases
-that should receive `prompt_cache_key`. The generated files
-`src/litellm.config.yaml` and `src/router/router_config.yaml` are kept committed
-for the Docker stack, but they are not the human edit point.
+`src/gateway.config.yaml` controls providers (adapter + registry metadata),
+connections (enabled endpoints, priority, stability, concurrency, model
+selection), combos (curated public models with candidate deployments and
+scoring weights), router knobs (default model, cache TTL, retry, quota
+cooldown), and LiteLLM settings (cache, logging, retries). The generated files
+`src/litellm.config.yaml` and `src/router/router_config.yaml` are kept
+committed for the Docker stack, but they are not the human edit point.
 
-The router validates that configured fallback aliases are allowed and that
-allowed aliases exist in the LiteLLM model list.
+The router validates the catalog at startup and the `gateway doctor` command
+reports missing env vars, inactive connections, and combo/registry
+consistency.
 
-If you use OpenCode with this gateway, run `generate_opencode_config.py` to sync
-the `provider.gateway.models` block in `~/.config/opencode/opencode.json` from
-the gateway catalog. It preserves any manually added per-model options while
-adding new aliases and updating generated display names. Use `--dry-run` to
-preview the merged model list without writing the file.
+### Gateway CLI cookbook
+
+```bash
+# Validate providers, connections, combos, and env vars
+set -a; . src/.env; set +a   # or export the same values in your shell
+python3 src/scripts/gateway.py doctor
+
+# Regenerate runtime configs from gateway.config.yaml
+python3 src/scripts/gateway.py generate
+
+# Print the live catalog
+python3 src/scripts/gateway.py models --view all
+python3 src/scripts/gateway.py models --view combos
+
+# Explain how a model id resolves to deployments
+python3 src/scripts/gateway.py explain kimi-k2.7-code
+
+# Preview and apply a client config
+python3 src/scripts/gateway.py setup codex --catalog all --dry-run
+python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply
+
+# Query the live catalog over HTTP
+curl "http://localhost:4100/v1/models?view=all" -H "Authorization: Bearer $VIRTUAL_KEY"
+```
+
+`gateway.py doctor` checks the current shell environment. If you have only
+created `src/.env`, export it first as shown above. The command verifies that
+required variables are present; the chat smoke tests below still require real,
+non-empty provider keys or a reachable Ollama endpoint.
+
+If you use OpenCode with this gateway, configure it with the gateway CLI. The
+default `local-plugin` mode installs a first-party plugin that fetches the live
+catalog from `/v1/models?view=<catalog>` at startup; `static` mode writes a
+snapshot of the current catalog into `provider.gateway.models`:
+
+```bash
+python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --dry-run
+python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply
+python3 src/scripts/gateway.py setup opencode --mode static --catalog all --apply
+```
 
 ## Deploy With Docker Compose
 
@@ -291,7 +339,7 @@ docker compose exec litellm python3 -c "
 import os, json, urllib.request
 body = json.dumps({
     'key_alias': 'codex-cli',
-    'models': ['opencodego-fast', 'opencodego-code', 'fast', 'deepseek-pro'],
+    'models': ['ollama-cloud.kimi-k2.7-code', 'deepseek-api.deepseek-v4-pro', 'opencode-go.kimi-k2.7-code'],
     'max_budget': 5.0
 }).encode()
 req = urllib.request.Request(
@@ -309,6 +357,15 @@ print(json.load(urllib.request.urlopen(req, timeout=30))['key'])
 
 Use the returned key as the agent API key.
 
+Because the router rewrites catalog ids to deployment ids before calling
+LiteLLM, LiteLLM virtual keys must allow the internal deployment ids they may
+use, such as `ollama-cloud.kimi-k2.7-code` and
+`deepseek-api.deepseek-v4-pro`. When a combo or registry model falls back, the
+served deployment may be any of its candidates, so the virtual key allowlist
+must include every deployment id the agent is allowed to use. Use
+`python3 src/scripts/gateway.py explain <model>` to list the candidate
+deployments for a combo or registry model.
+
 ## Client Usage
 
 OpenAI-compatible clients should point at the router and use a virtual key:
@@ -324,14 +381,20 @@ upstream provider behind this gateway.
 
 ## Request Examples
 
-List models:
+These examples require a LiteLLM virtual key in `VIRTUAL_KEY`. Create one with
+the command in [Create And Use Virtual Keys](#create-and-use-virtual-keys), or
+export an existing key before running the curls. Chat requests also require at
+least one candidate provider for the requested model to be reachable and
+authenticated.
+
+List models (live catalog, all views):
 
 ```bash
-curl http://localhost:4100/v1/models \
+curl "http://localhost:4100/v1/models?view=all" \
   -H "Authorization: Bearer $VIRTUAL_KEY"
 ```
 
-Chat completion:
+Chat completion (uses the default combo `coder`):
 
 ```bash
 curl http://localhost:4100/v1/chat/completions \
@@ -344,7 +407,7 @@ curl http://localhost:4100/v1/chat/completions \
   }'
 ```
 
-Force an allowed alias:
+Force a registry model (provider fallback allowed):
 
 ```bash
 curl http://localhost:4100/v1/chat/completions \
@@ -352,7 +415,21 @@ curl http://localhost:4100/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: explicit-model-test" \
   -d '{
-    "model": "deepseek-pro",
+    "model": "kimi-k2.7-code",
+    "messages": [{"role": "user", "content": "explain this design tradeoff"}],
+    "max_tokens": 200
+  }'
+```
+
+Force one connection (no fallback):
+
+```bash
+curl http://localhost:4100/v1/chat/completions \
+  -H "Authorization: Bearer $VIRTUAL_KEY" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: connection-model-test" \
+  -d '{
+    "model": "ollama-cloud.kimi-k2.7-code",
     "messages": [{"role": "user", "content": "explain this design tradeoff"}],
     "max_tokens": 200
   }'
@@ -498,30 +575,41 @@ Readiness returns `503`:
 
 An agent receives `403`:
 
-- Check whether the LiteLLM virtual key is allowed to use the requested or
-  routed alias.
-- Try `/v1/models` with the same virtual key.
+- Check whether the LiteLLM virtual key allowlist includes the deployment id
+  the router tried. The router rewrites catalog ids to deployment ids before
+  calling LiteLLM, so the allowlist must include deployment ids such as
+  `ollama-cloud.kimi-k2.7-code`, not just the combo or registry model id.
+- Run `python3 src/scripts/gateway.py explain <model>` to list the candidate
+  deployments, then update the virtual key allowlist.
+- Try `/v1/models?view=all` with the same virtual key.
 
-Requests route to an unexpected model:
+Requests route to an unexpected deployment:
 
-- Check `X-Gateway-Reason`.
-- If it is `warm-session`, change `X-Session-Id` or wait for
-  `cache_ttl_seconds` to expire.
-- If it is `explicit-model`, the request body supplied an allowed `model`.
-- If it is `default-model`, set `model` explicitly in the client or change
+- Inspect `X-Gateway-Requested-Model`, `X-Gateway-Model-Kind`, and
+  `X-Gateway-Served-Deployment`.
+- If `X-Gateway-Served-Deployment` differs from the requested model, a
+  fallback occurred; inspect `X-Gateway-Attempted-Models` for the full try
+  order.
+- If no `model` was supplied and the session was warm, the router reused the
+  previous successful deployment. Change `X-Session-Id` or wait for
+  `cache_ttl_seconds` to expire to re-resolve.
+- If no `model` was supplied and the session was cold, the router used
+  `default_model` (`coder` by default). Set `model` explicitly or change
   `default_model` in `src/gateway.config.yaml`, then regenerate configs.
 
 Fallbacks are happening:
 
-- Inspect `X-Gateway-Fallback-*` headers.
+- Inspect `X-Gateway-Fallback-Count` and `X-Gateway-Attempted-Models`.
 - Check `/metrics` for `provider_availability`.
 - Tail LiteLLM logs for provider status codes and auth errors.
 
 Router startup fails after config edits:
 
-- Run `python3 src/scripts/generate_configs.py` and check for validation errors.
-- Ensure every fallback target in `src/gateway.config.yaml` names a configured
-  model alias.
+- Run `python3 src/scripts/gateway.py doctor` and check for validation
+  errors.
+- Run `python3 src/scripts/gateway.py generate` to regenerate runtime configs.
+- Ensure every combo candidate in `src/gateway.config.yaml` names a connection
+  and registry model that exist.
 
 ## Current Scope And Future Work
 

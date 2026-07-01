@@ -5,9 +5,14 @@ import pytest
 
 from router.main import create_app
 
+ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
+ENV_GO = {"OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
+ENV_DEEPSEEK = {"DEEPSEEK_API_KEY": "x"}
+ENV_ALL = {**ENV_OLLAMA, **ENV_GO, **ENV_DEEPSEEK}
+
 
 @pytest.mark.asyncio
-async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_headers():
+async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_headers(monkeypatch):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -17,6 +22,8 @@ async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_header
         seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "OK"}}]})
 
+    for key, value in ENV_ALL.items():
+        monkeypatch.setenv(key, value)
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=httpx.MockTransport(handler))
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -30,36 +37,53 @@ async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_header
     assert seen["url"] == "http://litellm:4000/v1/chat/completions"
     assert seen["authorization"] == "Bearer virtual-key"
     assert seen["content_type"] == "application/json"
-    assert seen["body"]["model"] == "coder"
-    assert response.headers["X-Gateway-Model"] == "coder"
+    assert seen["body"]["model"] == "ollama-cloud.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio
-async def test_models_compat_preserves_auth_and_response_body():
-    seen = {}
+async def test_models_compat_returns_live_gateway_catalog(
+    simple_route_config_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
 
-    async def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["authorization"] = request.headers.get("authorization")
-        return httpx.Response(200, json={"object": "list", "data": [{"id": "coder", "object": "model"}]})
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("live catalog must not proxy to LiteLLM")
 
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=httpx.MockTransport(handler))
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        config_path=simple_route_config_path,
+        transport=httpx.MockTransport(handler),
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/models", headers={"Authorization": "Bearer virtual-key"})
 
     assert response.status_code == 200
-    assert seen == {"url": "http://litellm:4000/v1/models", "authorization": "Bearer virtual-key"}
-    assert response.json() == {"object": "list", "data": [{"id": "coder", "object": "model"}]}
+    body = response.json()
+    assert body["object"] == "list"
+    ids = [item["id"] for item in body["data"]]
+    assert "coder" in ids
+    assert "kimi-k2.7-code" in ids
+    assert "ollama-cloud.kimi-k2.7-code" in ids
 
 
 @pytest.mark.asyncio
-async def test_streaming_chat_compat_preserves_sse_content_type_and_body():
+async def test_streaming_chat_compat_preserves_sse_content_type_and_body(monkeypatch):
     sse_body = b'data: {"choices":[{"delta":{"content":"O"}}]}\n\ndata: [DONE]\n\n'
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=sse_body, headers={"content-type": "text/event-stream"})
 
+    for key, value in ENV_ALL.items():
+        monkeypatch.setenv(key, value)
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=httpx.MockTransport(handler))
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:

@@ -20,7 +20,7 @@ regen: ## Regenerate runtime configs from src/gateway.config.yaml
 
 .PHONY: regen-opencode
 regen-opencode: ## Sync the gateway catalog into ~/.config/opencode/opencode.json
-	python3 $(COMPOSE_DIR)/scripts/generate_opencode_config.py
+	python3 $(COMPOSE_DIR)/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply
 
 .PHONY: regen-all
 regen-all: regen regen-opencode ## Regenerate configs and sync opencode models

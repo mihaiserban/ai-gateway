@@ -7,9 +7,12 @@ This runs a small personal AI gateway stack with Docker:
 - Postgres for LiteLLM virtual keys, spend tracking, and UI state
 - Redis for LiteLLM cache state and router session stickiness (see [docs/redis.md](../docs/redis.md))
 
-Agents talk to the router. The router chooses an alias, keeps warm sessions on
-the same alias, redacts obvious secrets, and forwards the request to LiteLLM.
-LiteLLM handles provider adapters, virtual keys, caching, fallbacks, and spend
+Agents talk to the router. The router resolves the requested model (combo,
+registry model, or connection model) to an ordered deployment list, keeps warm
+sessions on the same deployment, redacts obvious secrets, and forwards to
+LiteLLM. LiteLLM is an execution adapter: the router rewrites catalog ids to
+internal deployment ids (e.g. `ollama-cloud.kimi-k2.7-code`) before calling
+LiteLLM. LiteLLM handles provider adapters, virtual keys, caching, and spend
 tracking.
 
 ## Files
@@ -17,19 +20,20 @@ tracking.
 ```text
 src/
   docker-compose.yml
-  gateway.config.yaml
-  litellm.config.yaml
+  gateway.config.yaml     # human-edited providers, connections, combos, router, LiteLLM
+  litellm.config.yaml     # generated LiteLLM deployments and cache settings
   .env.example
   README.md
   scripts/
-    generate_configs.py
+    gateway.py            # gateway CLI: generate, doctor, explain, models, setup
+    generate_configs.py   # legacy regenerator (delegates to gateway.py generate)
   router/
     Dockerfile
     requirements.txt
     main.py
     redaction.py
     routing.py
-    router_config.yaml
+    router_config.yaml    # generated router deployments, TTLs, timeouts
     sessions.py
     tests/
 ```
@@ -61,7 +65,11 @@ Edit `.env` and set:
 - `DEEPSEEK_API_KEY`
 - `OPENCODE_GO_API_KEY`
 - `OLLAMA_API_KEY`
-- `OLLAMA_API_BASE=https://ollama.com` for Ollama Cloud
+- `OLLAMA_API_BASE=https://ollama.com` for the default `ollama-cloud` connection
+
+The checked-in catalog names the Ollama connection `ollama-cloud`. If you want
+to run a separate local Ollama connection later, add it as a distinct
+connection instead of reusing the cloud deployment ids.
 
 Start it:
 
@@ -84,10 +92,25 @@ Health check:
 curl http://localhost:4100/healthz
 ```
 
-Model discovery (use a virtual key, not the master key, for agents):
+Before running model discovery or chat as an agent, create a LiteLLM virtual
+key in [Virtual Keys And Model Allowlists](#virtual-keys-and-model-allowlists)
+or export an existing one:
 
 ```bash
-curl http://localhost:4100/v1/models \
+export VIRTUAL_KEY=<litellm-virtual-key>
+```
+
+Model discovery uses that virtual key. The router returns the live catalog
+filtered to active deployments. Use `?view=` to select a slice:
+
+```bash
+curl "http://localhost:4100/v1/models?view=all" \
+  -H "Authorization: Bearer $VIRTUAL_KEY"
+curl "http://localhost:4100/v1/models?view=combos" \
+  -H "Authorization: Bearer $VIRTUAL_KEY"
+curl "http://localhost:4100/v1/models?view=registry" \
+  -H "Authorization: Bearer $VIRTUAL_KEY"
+curl "http://localhost:4100/v1/models?view=connections" \
   -H "Authorization: Bearer $VIRTUAL_KEY"
 ```
 
@@ -104,6 +127,11 @@ curl http://localhost:4100/v1/chat/completions \
   }'
 ```
 
+The chat smoke tests require at least one candidate provider for the requested
+model to be reachable and authenticated. If every provider key is blank or the
+Ollama Cloud endpoint/key is wrong, health and model discovery can still pass
+while chat returns `502 gateway_upstream_exhausted`.
+
 Admin smoke test (master key, for setup/verification only):
 
 ```bash
@@ -119,11 +147,12 @@ curl http://localhost:4100/v1/chat/completions \
 
 The router adds these response headers:
 
-- `X-Gateway-Model`: selected LiteLLM alias
-- `X-Gateway-Provider-Model`: resolved provider/model string (e.g. `openai/kimi-k2.7-code`)
-- `X-Gateway-Reason`: `explicit-model`, `warm-session`, or `default-model`
+- `X-Gateway-Requested-Model`: the model id the caller requested
+- `X-Gateway-Model-Kind`: `combo`, `registry-model`, or `connection-model`
+- `X-Gateway-Served-Deployment`: the deployment id that served the response (e.g. `ollama-cloud.kimi-k2.7-code`)
 - `X-Gateway-Fallback-Count`: number of fallback hops (0 when no fallback)
-- `X-Gateway-Fallback-From`: original alias, only present when a fallback occurred
+- `X-Gateway-Attempted-Models`: comma-separated deployment ids tried, in order
+- `X-Gateway-Fallback-From`: first attempted deployment id, only present when a fallback occurred
 
 Health and readiness:
 
@@ -139,15 +168,16 @@ curl http://localhost:4100/metrics | python3 -m json.tool
 ```
 
 The metrics endpoint is an in-memory debug view that resets when the router
-container restarts. It reports request totals, selected and served aliases,
-fallback count, LiteLLM cache counts (`hit`, `miss`, `unknown`), and
-per-alias upstream availability. Availability is keyed by LiteLLM alias and
-counts every upstream attempt, including failed attempts before a fallback:
+container restarts. It reports request totals, requested and served
+deployments, fallback count, LiteLLM cache counts (`hit`, `miss`, `unknown`),
+and per-deployment upstream availability. Availability is keyed by deployment
+id and counts every upstream attempt, including failed attempts before a
+fallback:
 
 ```json
 {
   "provider_availability": {
-    "opencodego-fast": {
+    "ollama-cloud.kimi-k2.7-code": {
       "attempts": 12,
       "successes": 10,
       "failures": 2,
@@ -213,20 +243,30 @@ limit 20;
 
 Agents should use LiteLLM virtual keys, not the master key. Create one key
 per agent/tool with a model allowlist so a background summarizer cannot use
-an expensive alias.
+an expensive deployment.
+
+Because the router rewrites catalog ids to deployment ids before calling
+LiteLLM, LiteLLM virtual keys must allow the internal deployment ids they may
+use, such as `ollama-cloud.kimi-k2.7-code` and
+`deepseek-api.deepseek-v4-pro`. When a combo or registry model falls back,
+the served deployment may be any of its candidates, so the virtual key
+allowlist must include every deployment id the agent is allowed to use. Use
+`python3 src/scripts/gateway.py explain <model>` to list the candidate
+deployments for a combo or registry model.
 
 ### Per-Agent Keys
 
 The following virtual keys are provisioned on a fresh stack (re-create them
 after a `docker compose down -v` that wipes Postgres):
 
-| Agent / Tool   | Key alias      | Allowlist                                         | Max budget |
-| -------------- | -------------- | ------------------------------------------------- | ---------- |
-| Codex CLI      | `codex-cli`    | `opencodego-fast`, `opencodego-code`, `fast`, `deepseek-pro` | $5.00      |
-| Summarizer     | `summarizer`   | `fast`, `ollama-cloud`                            | $2.00      |
+| Agent / Tool | Key alias | Allowlist (deployment ids) | Max budget |
+| --- | --- | --- | --- |
+| Codex CLI | `codex-cli` | `ollama-cloud.kimi-k2.7-code`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` | $5.00 |
+| Summarizer | `summarizer` | `ollama-cloud.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash` | $2.00 |
 
-The `summarizer` key is intentionally restricted to the cheaper aliases so a
-background summarizer cannot spend on `deepseek-pro` or `opencodego-*`.
+The `summarizer` key is intentionally restricted to the cheaper flash
+deployments so a background summarizer cannot spend on `deepseek-v4-pro` or
+the coding combos.
 
 ### Creating A Virtual Key
 
@@ -237,7 +277,7 @@ docker compose exec litellm python3 -c "
 import os, json, urllib.request
 body = json.dumps({
     'key_alias': 'codex-cli',
-    'models': ['opencodego-fast', 'opencodego-code', 'fast', 'deepseek-pro'],
+    'models': ['ollama-cloud.kimi-k2.7-code', 'deepseek-api.deepseek-v4-pro', 'opencode-go.kimi-k2.7-code'],
     'max_budget': 5.0
 }).encode()
 req = urllib.request.Request(
@@ -254,8 +294,9 @@ print(json.load(urllib.request.urlopen(req, timeout=30))['key'])
 ```
 
 Use the returned `key` value as the `Authorization: Bearer <key>` for that
-agent. Replace `reasoning` with an alias you have configured if it is not in
-`gateway.config.yaml`.
+agent. The `models` list must contain deployment ids, not catalog ids. Run
+`python3 src/scripts/gateway.py explain <model>` from the repo to list the
+candidate deployments for a combo or registry model.
 
 The master key is only for admin setup (creating keys, viewing spend). Do not
 put it in agent configs.
@@ -270,42 +311,61 @@ export OPENAI_BASE_URL=http://<nas-host>:4100/v1
 export OPENAI_API_KEY=<litellm-virtual-key>
 ```
 
+Or render the Codex config from the live catalog with the gateway CLI:
+
+```bash
+python3 src/scripts/gateway.py setup codex --catalog all --dry-run
+python3 src/scripts/gateway.py setup codex --catalog all --apply
+```
+
 Codex Pro is a client entitlement; it calls this gateway as a client and is
 not configured as an upstream provider.
 
-## Active Aliases
+## Live Model Catalog
 
-Use model aliases from `gateway.config.yaml`. All primaries target Ollama Cloud
-(largest subscription). Fallback chains use different providers for resilience.
+The gateway exposes three kinds of model ids in `/v1/models`. See
+[docs/models.md](../docs/models.md) for the full reference, live provider
+catalog tables, and scoring weights.
 
-### Semantic aliases (use these in agents)
+| Kind | Examples | Use when |
+| --- | --- | --- |
+| Combo | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | A tool or orchestrator wants the gateway's recommended default for a job. |
+| Registry model | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.6`, `kimi-k2.7-code` | A caller wants an exact model family with provider fallback. |
+| Connection model | `ollama-cloud.kimi-k2.7-code`, `deepseek-api.deepseek-v4-pro` | A caller needs to force or debug one connection with no fallback. |
 
-| Alias | Primary model | Purpose |
-|---|---|---|
-| `explorer` | Ollama `deepseek-v4-flash` | Fast/cheap search, simple tasks |
-| `planner` | Ollama `glm-5.2` | Strong reasoning, planning, analysis |
-| `coder` | Ollama `kimi-k2.7-code` | Primary coding workhorse |
-| `coder-fast` | Ollama `deepseek-v4-flash` | Quick edits, commits |
-| `vision` | Ollama `kimi-k2.6` | Multimodal image understanding |
+Use combos first. Use a registry model when you know the model family. Use a
+connection model only when debugging or forcing one backend.
 
-### Internal aliases (only used as fallbacks)
+### Combos
 
-- `explorer-ds`, `explorer-ocg` — same model via DeepSeek/OpenCode Go
-- `planner-ocg` — glm-5.2 via OpenCode Go
-- `coder-ocg`, `coder-dsp`, `coder-dsp-ds` — kimi-k2.7-code/deepseek-v4-pro via other providers
-- `coder-fast-k26` — kimi-k2.6 fallback for coder-fast
-- `vision-ocg` — kimi-k2.6 via OpenCode Go
+All combos live under `combos:` in `src/gateway.config.yaml` and use scored
+candidate deployments. See [docs/models.md](../docs/models.md#combos) for the
+full candidate list and scoring weights.
+
+| Combo | Task | Primary deployment | Purpose |
+| --- | --- | --- | --- |
+| `explorer` | explore | `ollama-cloud.deepseek-v4-flash` | Fast/cheap search, simple tasks |
+| `planner` | plan | `ollama-cloud.glm-5.2` | Strong reasoning, planning, analysis |
+| `coder` | build | `ollama-cloud.kimi-k2.7-code` | Primary coding workhorse (default model) |
+| `coder-fast` | quick-build | `ollama-cloud.deepseek-v4-flash` | Quick edits, commits |
+| `vision` | vision | `ollama-cloud.kimi-k2.6` | Multimodal image understanding |
 
 Copilot Pro is intentionally skipped for now. Codex Pro is a client that can
 call this gateway; it is not configured as an upstream provider.
 
 ## Routing
 
-The router chooses aliases with deterministic rules:
+The router resolves the requested model id to an ordered deployment list:
 
-- explicit allowed `model` field wins
-- warm `X-Session-Id` keeps the previous model until the Redis TTL expires
-- otherwise, the configured `default_model` is used
+- **Combo** -> its candidate `(connection, model)` pairs, scored per the
+  combo's scoring weights and filtered to active connections.
+- **Registry model** -> every active connection whose provider registry lists
+  that model id, ordered by the same scoring inputs.
+- **Connection model** -> exactly the one named deployment.
+
+If no `model` is supplied, a warm `X-Session-Id` reuses the previous
+successful deployment; otherwise the configured `default_model` (`coder`) is
+used.
 
 Fallbacks trigger for provider-side capacity, quota, billing, entitlement,
 missing-model, context-limit, and unsupported-parameter errors. Caller-side
@@ -533,8 +593,11 @@ Back up the Docker volumes before major upgrades:
 - `LITELLM_SALT_KEY` is used to encrypt stored provider credentials. Do not
   rotate it casually after creating models or keys.
 - Keep `.env` only on the NAS or in a password manager.
-- Put provider model changes in `gateway.config.yaml`, then run `make regen`
-  from the repo root (or `python3 scripts/generate_configs.py` from `src/`),
-  and redeploy.
+- Put provider, connection, and combo changes in `gateway.config.yaml`, then
+  run `make regen` from the repo root (or
+  `python3 src/scripts/gateway.py generate`), and redeploy.
+- LiteLLM virtual key allowlists must contain deployment ids
+  (`ollama-cloud.kimi-k2.7-code`), not catalog ids, because the router
+  rewrites catalog ids to deployment ids before calling LiteLLM.
 - LiteLLM can warn that custom model costs are missing. That does not block
   calls; add `model_info` pricing later if exact spend reporting matters.

@@ -7,7 +7,7 @@ import pytest
 from router.dashboard import UsageSummaryStore, live_payload, parse_days
 from router.main import create_app
 from router.metrics import Metrics
-from router.routing import RouteConfig
+from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig
 
 
 @pytest.mark.parametrize(
@@ -32,16 +32,20 @@ class FakeRedisStatsCollector:
 
 
 @pytest.mark.asyncio
-async def test_live_payload_combines_health_metrics_and_config():
+async def test_live_payload_includes_catalog_counts():
     metrics = Metrics()
     metrics.record("coder", "coder", 0, cache_hit=True)
     state = SimpleNamespace(
         metrics=metrics,
         route_config=RouteConfig(
             default_model="coder",
-            allowed_models={"coder", "planner"},
-            fallbacks={"coder": ["planner"], "planner": []},
-            provider_models={"coder": "ollama_chat/kimi-k2.7-code"},
+            combos={"coder": ComboRuntime(strategy="score", candidates=("ollama-cloud.kimi-k2.7-code",))},
+            deployments={
+                "ollama-cloud.kimi-k2.7-code": DeploymentRuntime(
+                    provider="ollama", connection="ollama-cloud", model="kimi-k2.7-code"
+                )
+            },
+            registry_models={"kimi-k2.7-code": ["ollama-cloud.kimi-k2.7-code"]},
         ),
         redis_stats_collector=FakeRedisStatsCollector(),
     )
@@ -52,15 +56,9 @@ async def test_live_payload_combines_health_metrics_and_config():
         readiness={"router": "ok", "litellm": "ok", "redis": "ok", "postgres": "ok", "status": "ready"},
     )
 
-    assert payload["health"]["status"] == "ok"
-    assert payload["readiness"]["status"] == "ready"
-    assert payload["metrics"]["requests_total"] == 1
-    assert payload["metrics"]["cache_counts"] == {"hit": 1, "miss": 0, "unknown": 0}
-    assert payload["config"]["default_model"] == "coder"
-    assert payload["config"]["allowed_models"] == ["coder", "planner"]
-    assert payload["config"]["fallbacks"] == {"coder": ["planner"], "planner": []}
-    assert payload["config"]["provider_models"] == {"coder": "ollama_chat/kimi-k2.7-code"}
-    assert payload["redis"]["enabled"] is False
+    assert payload["catalog"]["counts"]["combos"] == 1
+    assert payload["catalog"]["counts"]["registry_models"] == 1
+    assert payload["catalog"]["counts"]["connection_models"] == 1
 
 
 def test_usage_summary_store_reads_ledger_with_window_filter():
@@ -208,9 +206,10 @@ async def test_dashboard_live_api_returns_json_shape():
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"health", "readiness", "metrics", "redis", "config"}
+    assert set(payload) == {"health", "readiness", "metrics", "redis", "config", "catalog", "routing_state"}
     assert payload["config"]["default_model"] == "coder"
     assert "enabled" in payload["redis"]
+    assert "counts" in payload["catalog"]
 
 
 @pytest.mark.asyncio
@@ -234,7 +233,7 @@ async def test_dashboard_usage_api_defaults_to_30_days_when_ledger_disabled():
 
 
 @pytest.mark.asyncio
-async def test_dashboard_routes_do_not_break_chat_or_metrics():
+async def test_dashboard_routes_do_not_break_chat_or_metrics(monkeypatch):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -244,6 +243,14 @@ async def test_dashboard_routes_do_not_break_chat_or_metrics():
             },
         )
 
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,

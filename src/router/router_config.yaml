@@ -4,176 +4,273 @@ cache_ttl_seconds: 600
 default_model: coder
 retry_base_delay: 0.2
 retry_max_delay: 2.0
-max_concurrent_upstream: 50
-allowed_models:
-- deepseek-v4-flash-ollama
-- deepseek-v4-flash-deepseek
-- deepseek-v4-flash-opencodego
-- glm-5.2-ollama
-- glm-5.2-opencodego
-- kimi-k2.7-code-ollama
-- kimi-k2.7-code-opencodego
-- deepseek-v4-pro-ollama
-- deepseek-v4-pro-deepseek
-- kimi-k2.6-ollama
-- kimi-k2.6-opencodego
-- deepseek-v4-flash
-- glm-5.2
-- kimi-k2.7-code
-- deepseek-v4-pro
-- kimi-k2.6
-- explorer
-- planner
-- coder
-- coder-fast
-- vision
-fallbacks:
-  deepseek-v4-flash-ollama: []
-  deepseek-v4-flash-deepseek: []
-  deepseek-v4-flash-opencodego: []
-  glm-5.2-ollama: []
-  glm-5.2-opencodego: []
-  kimi-k2.7-code-ollama: []
-  kimi-k2.7-code-opencodego: []
-  deepseek-v4-pro-ollama: []
-  deepseek-v4-pro-deepseek: []
-  kimi-k2.6-ollama: []
-  kimi-k2.6-opencodego: []
-  deepseek-v4-flash:
-  - deepseek-v4-flash-deepseek
-  - deepseek-v4-flash-opencodego
-  glm-5.2:
-  - glm-5.2-opencodego
-  - kimi-k2.7-code-opencodego
-  kimi-k2.7-code:
-  - kimi-k2.7-code-opencodego
-  - deepseek-v4-pro-deepseek
-  deepseek-v4-pro:
-  - deepseek-v4-pro-deepseek
-  kimi-k2.6:
-  - kimi-k2.6-opencodego
+max_concurrent_upstream: 0
+quota_cooldown_seconds: 300
+catalog:
+  default_view: all
+combos:
   explorer:
-  - deepseek-v4-flash-deepseek
-  - deepseek-v4-flash-opencodego
+    strategy: score
+    candidates:
+    - ollama-cloud.deepseek-v4-flash
+    - deepseek-api.deepseek-v4-flash
+    - opencode-go.deepseek-v4-flash
+    task: explore
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   planner:
-  - glm-5.2-opencodego
-  - deepseek-v4-pro-deepseek
-  - kimi-k2.7-code-opencodego
+    strategy: score
+    candidates:
+    - ollama-cloud.glm-5.2
+    - opencode-go.glm-5.2
+    - deepseek-api.deepseek-v4-pro
+    - opencode-go.kimi-k2.7-code
+    task: plan
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   coder:
-  - kimi-k2.7-code-opencodego
-  - deepseek-v4-pro-deepseek
+    strategy: score
+    candidates:
+    - ollama-cloud.kimi-k2.7-code
+    - deepseek-api.deepseek-v4-pro
+    - opencode-go.kimi-k2.7-code
+    task: build
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   coder-fast:
-  - deepseek-v4-flash-deepseek
-  - deepseek-v4-flash-opencodego
-  - kimi-k2.6-opencodego
+    strategy: score
+    candidates:
+    - ollama-cloud.deepseek-v4-flash
+    - deepseek-api.deepseek-v4-flash
+    - opencode-go.deepseek-v4-flash
+    - opencode-go.kimi-k2.6
+    task: quick-build
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   vision:
-  - kimi-k2.6-opencodego
-timeouts:
-  deepseek-v4-flash-ollama: 60
-  deepseek-v4-flash-deepseek: 60
-  deepseek-v4-flash-opencodego: 60
-  glm-5.2-ollama: 120
-  glm-5.2-opencodego: 120
-  kimi-k2.7-code-ollama: 120
-  kimi-k2.7-code-opencodego: 120
-  deepseek-v4-pro-ollama: 120
-  deepseek-v4-pro-deepseek: 120
-  kimi-k2.6-ollama: 60
-  kimi-k2.6-opencodego: 120
-  deepseek-v4-flash: 60
-  glm-5.2: 120
-  kimi-k2.7-code: 120
-  deepseek-v4-pro: 120
-  kimi-k2.6: 60
-  explorer: 60
-  planner: 120
-  coder: 120
-  coder-fast: 60
-  vision: 120
-cache_key_aliases: []
-provider_models:
-  deepseek-v4-flash-ollama: ollama_chat/deepseek-v4-flash
-  deepseek-v4-flash-deepseek: deepseek/deepseek-v4-flash
-  deepseek-v4-flash-opencodego: openai/deepseek-v4-flash
-  glm-5.2-ollama: ollama_chat/glm-5.2
-  glm-5.2-opencodego: openai/glm-5.2
-  kimi-k2.7-code-ollama: ollama_chat/kimi-k2.7-code
-  kimi-k2.7-code-opencodego: openai/kimi-k2.7-code
-  deepseek-v4-pro-ollama: ollama_chat/deepseek-v4-pro
-  deepseek-v4-pro-deepseek: deepseek/deepseek-v4-pro
-  kimi-k2.6-ollama: ollama_chat/kimi-k2.6
-  kimi-k2.6-opencodego: openai/kimi-k2.6
-  deepseek-v4-flash: ollama_chat/deepseek-v4-flash
-  glm-5.2: ollama_chat/glm-5.2
-  kimi-k2.7-code: ollama_chat/kimi-k2.7-code
-  deepseek-v4-pro: ollama_chat/deepseek-v4-pro
-  kimi-k2.6: ollama_chat/kimi-k2.6
-  explorer: ollama_chat/deepseek-v4-flash
-  planner: ollama_chat/glm-5.2
-  coder: ollama_chat/kimi-k2.7-code
-  coder-fast: ollama_chat/deepseek-v4-flash
-  vision: ollama_chat/kimi-k2.6
-model_prices:
-  deepseek-v4-flash-ollama:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  deepseek-v4-flash-deepseek:
+    strategy: score
+    candidates:
+    - ollama-cloud.kimi-k2.6
+    - opencode-go.kimi-k2.6
+    task: vision
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
+deployments:
+  ollama-cloud.deepseek-v4-flash:
+    provider: ollama
+    connection: ollama-cloud
+    model: deepseek-v4-flash
+    required_env:
+    - OLLAMA_API_BASE
+    - OLLAMA_API_KEY
+    display_name: DeepSeek V4 Flash
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
+  ollama-cloud.glm-5.2:
+    provider: ollama
+    connection: ollama-cloud
+    model: glm-5.2
+    required_env:
+    - OLLAMA_API_BASE
+    - OLLAMA_API_KEY
+    display_name: GLM 5.2
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
+  ollama-cloud.kimi-k2.7-code:
+    provider: ollama
+    connection: ollama-cloud
+    model: kimi-k2.7-code
+    required_env:
+    - OLLAMA_API_BASE
+    - OLLAMA_API_KEY
+    display_name: Kimi K2.7 Code
+    capabilities:
+    - chat
+    - coding
+    context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
+  ollama-cloud.deepseek-v4-pro:
+    provider: ollama
+    connection: ollama-cloud
+    model: deepseek-v4-pro
+    required_env:
+    - OLLAMA_API_BASE
+    - OLLAMA_API_KEY
+    display_name: DeepSeek V4 Pro
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
+  ollama-cloud.kimi-k2.6:
+    provider: ollama
+    connection: ollama-cloud
+    model: kimi-k2.6
+    required_env:
+    - OLLAMA_API_BASE
+    - OLLAMA_API_KEY
+    display_name: Kimi K2.6
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
+  deepseek-api.deepseek-v4-flash:
+    provider: deepseek
+    connection: deepseek-api
+    model: deepseek-v4-flash
+    required_env:
+    - DEEPSEEK_API_KEY
+    display_name: DeepSeek V4 Flash
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
     input_cost_per_token: 1.4e-07
     output_cost_per_token: 2.8e-07
-  deepseek-v4-flash-opencodego:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  glm-5.2-ollama:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  glm-5.2-opencodego:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  kimi-k2.7-code-ollama:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  kimi-k2.7-code-opencodego:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  deepseek-v4-pro-ollama:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  deepseek-v4-pro-deepseek:
+    priority: 30
+    stability: 0.9
+    max_concurrent: 20
+  deepseek-api.deepseek-v4-pro:
+    provider: deepseek
+    connection: deepseek-api
+    model: deepseek-v4-pro
+    required_env:
+    - DEEPSEEK_API_KEY
+    display_name: DeepSeek V4 Pro
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
     input_cost_per_token: 2.8e-07
     output_cost_per_token: 5.6e-07
-  kimi-k2.6-ollama:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  kimi-k2.6-opencodego:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
+    priority: 30
+    stability: 0.9
+    max_concurrent: 20
+  opencode-go.deepseek-v4-flash:
+    provider: opencode-go
+    connection: opencode-go
+    model: deepseek-v4-flash
+    required_env:
+    - OPENCODE_GO_API_BASE
+    - OPENCODE_GO_API_KEY
+    display_name: DeepSeek V4 Flash
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
+  opencode-go.glm-5.2:
+    provider: opencode-go
+    connection: opencode-go
+    model: glm-5.2
+    required_env:
+    - OPENCODE_GO_API_BASE
+    - OPENCODE_GO_API_KEY
+    display_name: GLM 5.2
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
+  opencode-go.kimi-k2.7-code:
+    provider: opencode-go
+    connection: opencode-go
+    model: kimi-k2.7-code
+    required_env:
+    - OPENCODE_GO_API_BASE
+    - OPENCODE_GO_API_KEY
+    display_name: Kimi K2.7 Code
+    capabilities:
+    - chat
+    - coding
+    context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
+  opencode-go.kimi-k2.6:
+    provider: opencode-go
+    connection: opencode-go
+    model: kimi-k2.6
+    required_env:
+    - OPENCODE_GO_API_BASE
+    - OPENCODE_GO_API_KEY
+    display_name: Kimi K2.6
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
+registry_models:
   deepseek-v4-flash:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
+  - ollama-cloud.deepseek-v4-flash
+  - deepseek-api.deepseek-v4-flash
+  - opencode-go.deepseek-v4-flash
   glm-5.2:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
+  - ollama-cloud.glm-5.2
+  - opencode-go.glm-5.2
   kimi-k2.7-code:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
+  - ollama-cloud.kimi-k2.7-code
+  - opencode-go.kimi-k2.7-code
   deepseek-v4-pro:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
+  - ollama-cloud.deepseek-v4-pro
+  - deepseek-api.deepseek-v4-pro
   kimi-k2.6:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  explorer:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  planner:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  coder:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  coder-fast:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
-  vision:
-    input_cost_per_token: 0.0
-    output_cost_per_token: 0.0
+  - ollama-cloud.kimi-k2.6
+  - opencode-go.kimi-k2.6

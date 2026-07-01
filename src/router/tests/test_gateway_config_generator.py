@@ -5,8 +5,6 @@ from pathlib import Path
 import pytest
 
 from scripts.generate_configs import (
-    ConfigError,
-    _resolve_entry,
     generate,
     load_gateway_config,
     render_litellm_config,
@@ -16,287 +14,129 @@ from scripts.generate_configs import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_render_router_config_from_gateway_config():
+def test_render_litellm_config_emits_configured_deployment_ids():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
-    entries = config["models"] + config.get("aliases", [])
+
+    model_names = [entry["model_name"] for entry in render_litellm_config(config)["model_list"]]
+
+    assert "ollama-cloud.kimi-k2.7-code" in model_names
+    assert "deepseek-api.deepseek-v4-pro" in model_names
+    assert "coder" not in model_names
+
+
+def test_render_litellm_config_emits_additional_drop_params_for_opencode_go():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
+
+    litellm_config = render_litellm_config(config)
+    opencode_go_entries = [
+        entry for entry in litellm_config["model_list"] if entry["model_name"].startswith("opencode-go.")
+    ]
+    assert opencode_go_entries, "expected at least one opencode-go deployment"
+    for entry in opencode_go_entries:
+        assert entry["litellm_params"]["additional_drop_params"] == ["reasoningSummary"]
+    # Providers without drop_params must not emit the key.
+    ollama_entry = next(
+        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-cloud.kimi-k2.7-code"
+    )
+    assert "additional_drop_params" not in ollama_entry["litellm_params"]
+
+
+def test_render_litellm_config_drops_none_api_base_for_envless_provider():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
+
+    litellm_config = render_litellm_config(config)
+    deepseek_entry = next(
+        entry for entry in litellm_config["model_list"] if entry["model_name"] == "deepseek-api.deepseek-v4-pro"
+    )
+
+    assert deepseek_entry["litellm_params"]["model"] == "deepseek/deepseek-v4-pro"
+    assert deepseek_entry["litellm_params"]["api_key"] == "os.environ/DEEPSEEK_API_KEY"
+    assert "api_base" not in deepseek_entry["litellm_params"]
+    assert deepseek_entry["model_info"] == {
+        "provider": "deepseek",
+        "connection": "deepseek-api",
+        "model": "deepseek-v4-pro",
+    }
+
+
+def test_render_litellm_config_includes_ollama_api_base_env():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
+
+    litellm_config = render_litellm_config(config)
+    ollama_entry = next(
+        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-cloud.kimi-k2.7-code"
+    )
+
+    assert ollama_entry["litellm_params"]["model"] == "ollama_chat/kimi-k2.7-code"
+    assert ollama_entry["litellm_params"]["api_base"] == "os.environ/OLLAMA_API_BASE"
+    assert ollama_entry["litellm_params"]["api_key"] == "os.environ/OLLAMA_API_KEY"
+    assert ollama_entry["model_info"] == {
+        "provider": "ollama",
+        "connection": "ollama-cloud",
+        "model": "kimi-k2.7-code",
+    }
+
+
+def test_render_router_config_uses_deployment_ids_and_combos():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
+
+    router_config = render_router_config(config)
+
+    assert router_config["default_model"] == "coder"
+    assert router_config["combos"]["coder"]["candidates"][0] == "ollama-cloud.kimi-k2.7-code"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["provider"] == "ollama"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["connection"] == "ollama-cloud"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["model"] == "kimi-k2.7-code"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["required_env"] == [
+        "OLLAMA_API_BASE",
+        "OLLAMA_API_KEY",
+    ]
+    assert "ollama-cloud.kimi-k2.7-code" in router_config["registry_models"]["kimi-k2.7-code"]
+
+
+def test_render_router_config_includes_quota_cooldown_and_catalog_default_view():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
+
+    router_config = render_router_config(config)
+
+    assert router_config["quota_cooldown_seconds"] == 300
+    assert router_config["catalog"]["default_view"] == "all"
+
+
+def test_render_router_config_carries_router_runtime_knobs():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
 
     router_config = render_router_config(config)
 
     assert router_config["cache_ttl_seconds"] == 600
     assert router_config["retry_base_delay"] == 0.2
     assert router_config["retry_max_delay"] == 2.0
-    assert router_config["default_model"] == config["router"]["default_model"]
-    assert router_config["allowed_models"] == [entry["name"] for entry in entries]
-    assert router_config["fallbacks"] == {entry["name"]: list(entry.get("fallbacks") or []) for entry in entries}
-    assert router_config["timeouts"] == {entry["name"]: entry.get("timeout", 120) for entry in entries}
-    assert router_config["cache_key_aliases"] == []
-    assert router_config["provider_models"] == {
-        entry["name"]: _resolve_entry(entry, {e["name"]: e for e in entries})["litellm_model"] for entry in entries
-    }
+    assert router_config["max_concurrent_upstream"] == 0
 
 
-def test_render_litellm_config_from_gateway_config():
+def test_render_litellm_config_preserves_litellm_settings():
     config = load_gateway_config(ROOT / "gateway.config.yaml")
-    entries = config["models"] + config.get("aliases", [])
 
     litellm_config = render_litellm_config(config)
 
-    first_entry = litellm_config["model_list"][0]
-    first_cfg = entries[0]
-    assert first_entry["model_name"] == first_cfg["name"]
-    assert first_entry["litellm_params"]["model"] == first_cfg["litellm_model"]
-    assert first_entry["litellm_params"]["api_key"] == f"os.environ/{first_cfg['api_key_env']}"
-    if "api_base_env" in first_cfg:
-        assert first_entry["litellm_params"]["api_base"] == f"os.environ/{first_cfg['api_base_env']}"
-
-    # Spot-check a model that carries additional_drop_params.
-    model_with_drop_params = next(
-        m for m in litellm_config["model_list"] if "additional_drop_params" in m["litellm_params"]
-    )
-    assert model_with_drop_params["litellm_params"]["additional_drop_params"] == ["reasoningSummary"]
     assert litellm_config["litellm_settings"]["cache_params"]["redis_url"] == "os.environ/REDIS_URL"
-    assert litellm_config["litellm_settings"]["callbacks"] == config["litellm"]["logging"]["callbacks"]
+    assert litellm_config["litellm_settings"]["callbacks"] == config.litellm["logging"]["callbacks"]
     assert litellm_config["general_settings"]["master_key"] == "os.environ/LITELLM_MASTER_KEY"
-    assert litellm_config["router_settings"]["fallbacks"] == [
-        {entry["name"]: list(entry.get("fallbacks") or [])} for entry in entries
-    ]
 
 
-def test_alias_entries_render_to_router_and_litellm_configs():
-    config = {
-        "router": {"default_model": "coder"},
-        "litellm": {
-            "settings": {"drop_params": True, "request_timeout": 120, "num_retries": 1},
-            "cache": {"type": "redis", "redis_url_env": "REDIS_URL"},
-            "general": {
-                "master_key_env": "LITELLM_MASTER_KEY",
-                "database_url_env": "DATABASE_URL",
-            },
-        },
-        "models": [
-            {
-                "name": "deepseek-v4-pro-ollama",
-                "litellm_model": "ollama_chat/deepseek-v4-pro",
-                "api_key_env": "OLLAMA_API_KEY",
-                "api_base_env": "OLLAMA_API_BASE",
-                "timeout": 120,
-                "model_info": {
-                    "reasoning_level": "high",
-                    "input_cost_per_token": 0.0,
-                    "output_cost_per_token": 0.0,
-                },
-            },
-            {
-                "name": "deepseek-v4-pro-deepseek",
-                "litellm_model": "deepseek/deepseek-v4-pro",
-                "api_key_env": "DEEPSEEK_API_KEY",
-                "timeout": 120,
-                "model_info": {
-                    "reasoning_level": "high",
-                    "input_cost_per_token": 0.00000028,
-                    "output_cost_per_token": 0.00000056,
-                },
-            },
-        ],
-        "aliases": [
-            {
-                "name": "deepseek-v4-pro",
-                "target": "deepseek-v4-pro-ollama",
-                "fallbacks": ["deepseek-v4-pro-deepseek"],
-                "timeout": 120,
-                "model_info": {"mode": "model-family", "reasoning_level": "high"},
-            },
-            {
-                "name": "coder",
-                "target": "deepseek-v4-pro",
-                "fallbacks": ["deepseek-v4-pro-deepseek"],
-                "timeout": 120,
-                "model_info": {"mode": "role", "reasoning_level": "high"},
-            },
-        ],
-    }
+def test_load_gateway_config_returns_gateway_catalog():
+    config = load_gateway_config(ROOT / "gateway.config.yaml")
 
-    router_config = render_router_config(config)
-    litellm_config = render_litellm_config(config)
+    from router.gateway_config import GatewayCatalog
 
-    assert router_config["default_model"] == "coder"
-    assert router_config["allowed_models"] == [
-        "deepseek-v4-pro-ollama",
-        "deepseek-v4-pro-deepseek",
-        "deepseek-v4-pro",
-        "coder",
-    ]
-    assert router_config["fallbacks"]["deepseek-v4-pro"] == ["deepseek-v4-pro-deepseek"]
-    assert router_config["fallbacks"]["coder"] == ["deepseek-v4-pro-deepseek"]
-    assert router_config["provider_models"]["coder"] == "ollama_chat/deepseek-v4-pro"
-
-    coder_entry = next(entry for entry in litellm_config["model_list"] if entry["model_name"] == "coder")
-    assert coder_entry["litellm_params"]["model"] == "ollama_chat/deepseek-v4-pro"
-    assert coder_entry["litellm_params"]["api_key"] == "os.environ/OLLAMA_API_KEY"
-    assert coder_entry["litellm_params"]["api_base"] == "os.environ/OLLAMA_API_BASE"
-    assert coder_entry["model_info"] == {"mode": "role", "reasoning_level": "high"}
+    assert isinstance(config, GatewayCatalog)
+    assert "ollama-cloud.kimi-k2.7-code" in config.deployments
 
 
-def test_render_router_config_includes_resolved_model_prices():
-    config = {
-        "models": [
-            {
-                "name": "paid-provider",
-                "litellm_model": "deepseek/example",
-                "api_key_env": "DEEPSEEK_API_KEY",
-                "model_info": {
-                    "input_cost_per_token": 0.25,
-                    "output_cost_per_token": 0.75,
-                    "reasoning_level": "medium",
-                },
-            }
-        ],
-        "aliases": [{"name": "coder", "target": "paid-provider"}],
-    }
-
-    rendered = render_router_config(config)
-
-    assert rendered["model_prices"] == {
-        "paid-provider": {
-            "input_cost_per_token": 0.25,
-            "output_cost_per_token": 0.75,
-        },
-        "coder": {
-            "input_cost_per_token": 0.25,
-            "output_cost_per_token": 0.75,
-        },
-    }
-
-
-def test_validation_rejects_unknown_fallback_target(tmp_path):
-    config_path = tmp_path / "gateway.config.yaml"
-    config_path.write_text(
-        """
-router:
-  cache_ttl_seconds: 600
-  default_model: coder
-  retry_base_delay: 0.2
-  retry_max_delay: 2.0
-  cache_key_aliases: []
-litellm:
-  settings:
-    drop_params: true
-    request_timeout: 120
-    num_retries: 1
-  cache:
-    type: redis
-    redis_url_env: REDIS_URL
-  general:
-    master_key_env: LITELLM_MASTER_KEY
-    database_url_env: DATABASE_URL
-models:
-  - name: explorer
-    litellm_model: ollama_chat/deepseek-v4-flash
-    api_key_env: OLLAMA_API_KEY
-    api_base_env: OLLAMA_API_BASE
-    timeout: 60
-    fallbacks:
-      - missing
-    model_info:
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigError, match="fallback target 'missing'"):
-        load_gateway_config(config_path)
-
-
-def test_validation_rejects_unknown_alias_target(tmp_path):
-    config_path = tmp_path / "gateway.config.yaml"
-    config_path.write_text(
-        """
-router:
-  default_model: coder
-litellm:
-  settings:
-    drop_params: true
-  cache:
-    redis_url_env: REDIS_URL
-  general:
-    master_key_env: LITELLM_MASTER_KEY
-    database_url_env: DATABASE_URL
-models:
-  - name: deepseek-v4-pro-ollama
-    litellm_model: ollama_chat/deepseek-v4-pro
-    api_key_env: OLLAMA_API_KEY
-aliases:
-  - name: coder
-    target: missing-target
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigError, match="alias 'coder' targets unknown entry 'missing-target'"):
-        load_gateway_config(config_path)
-
-
-def test_validation_rejects_alias_cycles(tmp_path):
-    config_path = tmp_path / "gateway.config.yaml"
-    config_path.write_text(
-        """
-router:
-  default_model: coder
-litellm:
-  settings:
-    drop_params: true
-  cache:
-    redis_url_env: REDIS_URL
-  general:
-    master_key_env: LITELLM_MASTER_KEY
-    database_url_env: DATABASE_URL
-models:
-  - name: deepseek-v4-pro-ollama
-    litellm_model: ollama_chat/deepseek-v4-pro
-    api_key_env: OLLAMA_API_KEY
-aliases:
-  - name: coder
-    target: planner
-  - name: planner
-    target: coder
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigError, match="alias cycle detected: coder -> planner -> coder"):
-        load_gateway_config(config_path)
-
-
-def test_validation_rejects_unknown_reasoning_level(tmp_path):
-    config_path = tmp_path / "gateway.config.yaml"
-    config_path.write_text(
-        """
-router:
-  default_model: coder
-litellm:
-  settings:
-    drop_params: true
-  cache:
-    redis_url_env: REDIS_URL
-  general:
-    master_key_env: LITELLM_MASTER_KEY
-    database_url_env: DATABASE_URL
-models:
-  - name: deepseek-v4-pro-ollama
-    litellm_model: ollama_chat/deepseek-v4-pro
-    api_key_env: OLLAMA_API_KEY
-    model_info:
-      reasoning_level: extreme
-aliases:
-  - name: coder
-    target: deepseek-v4-pro-ollama
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigError, match="reasoning_level for 'deepseek-v4-pro-ollama'"):
-        load_gateway_config(config_path)
+def test_generate_rejects_missing_file(tmp_path):
+    missing = tmp_path / "nope.yaml"
+    with pytest.raises(FileNotFoundError):
+        load_gateway_config(missing)
 
 
 def test_committed_generated_configs_match_gateway_config(tmp_path):

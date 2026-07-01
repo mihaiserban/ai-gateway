@@ -19,7 +19,7 @@ class FakeSink:
 
 
 @pytest.mark.asyncio
-async def test_chat_emits_prompt_free_usage_event():
+async def test_chat_emits_prompt_free_usage_event(monkeypatch):
     sink = FakeSink()
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -32,6 +32,14 @@ async def test_chat_emits_prompt_free_usage_event():
             headers={"x-litellm-cache-hit": "true"},
         )
 
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
@@ -55,7 +63,7 @@ async def test_chat_emits_prompt_free_usage_event():
     assert event.session_hash != "session-raw"
     assert event.requested_model == "coder"
     assert event.selected_model == "coder"
-    assert event.served_model == "coder"
+    assert event.served_model == "ollama-cloud.kimi-k2.7-code"
     assert event.status == "200"
     assert event.prompt_tokens == 10
     assert event.completion_tokens == 4
@@ -69,10 +77,18 @@ async def test_chat_emits_prompt_free_usage_event():
 
 
 @pytest.mark.asyncio
-async def test_usage_sink_failure_does_not_fail_chat():
+async def test_usage_sink_failure_does_not_fail_chat(monkeypatch):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
@@ -84,7 +100,7 @@ async def test_usage_sink_failure_does_not_fail_chat():
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "sink-failure"},
-            json={"messages": [{"role": "user", "content": "say hello"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "say hello"}]},
         )
 
     assert response.status_code == 200

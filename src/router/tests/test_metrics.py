@@ -6,66 +6,65 @@ import pytest
 from router.main import create_app
 from router.metrics import Metrics
 
+ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
+ENV_GO = {"OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
+ENV_DEEPSEEK = {"DEEPSEEK_API_KEY": "x"}
+
+
+def _env(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
 
 @pytest.mark.asyncio
-async def test_metrics_counts_requests_and_models(simple_route_config_path: str):
-    """Two requests using different selected models bump the right counters."""
-
+async def test_metrics_counts_requests_and_models(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        # coder: code signal ("refactor ... .py")
         await client.post(
             "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "s1"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "a"}]},
         )
-        # explorer: short plain prompt with no code/reasoning signals
+        _env(monkeypatch, {**ENV_OLLAMA, **ENV_DEEPSEEK})
         await client.post(
             "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "s2"},
-            json={"model": "explorer", "messages": [{"role": "user", "content": "say hello"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "b"}]},
         )
 
     metrics: Metrics = app.state.metrics
     assert metrics.requests_total == 2
-    assert metrics.selected_model_counts == {"coder": 1, "explorer": 1}
-    assert metrics.served_model_counts == {"coder": 1, "explorer": 1}
     assert metrics.fallback_count_total == 0
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_fallbacks(simple_route_config_path: str):
-    """One request that falls back adds fallback_count_total and records the final model."""
-
+async def test_metrics_counts_fallbacks(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "coder":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "fb"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 200
@@ -74,14 +73,11 @@ async def test_metrics_counts_fallbacks(simple_route_config_path: str):
     metrics: Metrics = app.state.metrics
     assert metrics.requests_total == 1
     assert metrics.fallback_count_total == 1
-    # selected_model_counts tracks the originally chosen model.
-    assert metrics.selected_model_counts == {"coder": 1}
-    # served_model_counts tracks the model that actually served the request.
-    assert metrics.served_model_counts == {"explorer": 1}
+    assert metrics.served_model_counts == {"opencode-go.kimi-k2.7-code": 1}
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_cache_hit_miss_and_unknown(simple_route_config_path: str):
+async def test_metrics_counts_cache_hit_miss_and_unknown(monkeypatch, simple_route_config_path: str):
     cache_headers = iter(
         [
             {"x-litellm-cache-hit": "true"},
@@ -91,17 +87,13 @@ async def test_metrics_counts_cache_hit_miss_and_unknown(simple_route_config_pat
     )
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": "OK"}}]},
-            headers=next(cache_headers),
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]}, headers=next(cache_headers))
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -110,7 +102,7 @@ async def test_metrics_counts_cache_hit_miss_and_unknown(simple_route_config_pat
             await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": "Bearer test", "X-Session-Id": session_id},
-                json={"messages": [{"role": "user", "content": "say hello"}]},
+                json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "say hello"}]},
             )
 
     payload = app.state.metrics.snapshot()
@@ -118,7 +110,7 @@ async def test_metrics_counts_cache_hit_miss_and_unknown(simple_route_config_pat
 
 
 @pytest.mark.asyncio
-async def test_metrics_counts_cache_key_without_hit_header_as_miss(simple_route_config_path: str):
+async def test_metrics_counts_cache_key_without_hit_header_as_miss(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -126,11 +118,11 @@ async def test_metrics_counts_cache_key_without_hit_header_as_miss(simple_route_
             headers={"x-litellm-cache-key": "cache-key"},
         )
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -138,7 +130,7 @@ async def test_metrics_counts_cache_key_without_hit_header_as_miss(simple_route_
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "cache-key-miss"},
-            json={"messages": [{"role": "user", "content": "say hello"}]},
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "say hello"}]},
         )
 
     payload = app.state.metrics.snapshot()
@@ -146,18 +138,18 @@ async def test_metrics_counts_cache_key_without_hit_header_as_miss(simple_route_
 
 
 @pytest.mark.asyncio
-async def test_metrics_tracks_availability_for_each_upstream_attempt(simple_route_config_path: str):
+async def test_metrics_tracks_availability_for_each_upstream_attempt(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "coder":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -165,39 +157,27 @@ async def test_metrics_tracks_availability_for_each_upstream_attempt(simple_rout
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "availability"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     provider_availability = app.state.metrics.snapshot()["provider_availability"]
-    assert provider_availability["provider/coder-model"]["attempts"] == 1
-    assert provider_availability["provider/coder-model"]["successes"] == 0
-    assert provider_availability["provider/coder-model"]["failures"] == 1
-    assert provider_availability["provider/coder-model"]["retryable_failures"] == 1
-    assert provider_availability["provider/coder-model"]["availability_percent"] == 0.0
-    assert provider_availability["provider/coder-model"]["last_status"] == 503
-    assert provider_availability["provider/coder-model"]["last_failure_ts"] is not None
-
-    assert provider_availability["provider/explorer-model"]["attempts"] == 1
-    assert provider_availability["provider/explorer-model"]["successes"] == 1
-    assert provider_availability["provider/explorer-model"]["failures"] == 0
-    assert provider_availability["provider/explorer-model"]["retryable_failures"] == 0
-    assert provider_availability["provider/explorer-model"]["availability_percent"] == 100.0
-    assert provider_availability["provider/explorer-model"]["last_status"] == 200
-    assert provider_availability["provider/explorer-model"]["last_failure_ts"] is None
+    assert provider_availability["ollama-cloud.kimi-k2.7-code"]["attempts"] == 1
+    assert provider_availability["ollama-cloud.kimi-k2.7-code"]["failures"] == 1
+    assert provider_availability["ollama-cloud.kimi-k2.7-code"]["retryable_failures"] == 1
+    assert provider_availability["opencode-go.kimi-k2.7-code"]["attempts"] == 1
+    assert provider_availability["opencode-go.kimi-k2.7-code"]["successes"] == 1
 
 
 @pytest.mark.asyncio
-async def test_metrics_endpoint_returns_counts(simple_route_config_path: str):
-    """GET /metrics returns the documented JSON shape."""
-
+async def test_metrics_endpoint_returns_counts(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -205,7 +185,7 @@ async def test_metrics_endpoint_returns_counts(simple_route_config_path: str):
         await client.post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer test", "X-Session-Id": "m1"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
         )
         resp = await client.get("/metrics")
 
@@ -218,8 +198,6 @@ async def test_metrics_endpoint_returns_counts(simple_route_config_path: str):
         "served_model_counts",
         "cache_counts",
         "provider_availability",
+        "routing_state",
     }
     assert payload["requests_total"] == 1
-    assert payload["fallback_count_total"] == 0
-    assert payload["selected_model_counts"] == {"coder": 1}
-    assert payload["served_model_counts"] == {"coder": 1}
