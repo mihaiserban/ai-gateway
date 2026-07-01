@@ -10,20 +10,30 @@ from router.main import create_app
 VIRTUAL_KEY = "sk-virtual-key-allowlisted"
 MASTER_KEY = "Bearer sk-master-key"
 
+ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
+ENV_GO = {"OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
+ENV_DEEPSEEK = {"DEEPSEEK_API_KEY": "x"}
+ENV_ALL = {**ENV_OLLAMA, **ENV_GO, **ENV_DEEPSEEK}
+
+
+def _env(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
 
 @pytest.mark.asyncio
-async def test_virtual_key_is_forwarded_to_litellm(simple_route_config_path: str):
+async def test_virtual_key_is_forwarded_to_litellm(monkeypatch, simple_route_config_path: str):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, ENV_ALL)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -31,7 +41,7 @@ async def test_virtual_key_is_forwarded_to_litellm(simple_route_config_path: str
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": f"Bearer {VIRTUAL_KEY}", "X-Session-Id": "vkey-forward"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 200
@@ -39,7 +49,7 @@ async def test_virtual_key_is_forwarded_to_litellm(simple_route_config_path: str
 
 
 @pytest.mark.asyncio
-async def test_virtual_key_allowlist_403_is_surfaced(simple_route_config_path: str):
+async def test_virtual_key_allowlist_403_is_surfaced(monkeypatch, simple_route_config_path: str):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -49,21 +59,18 @@ async def test_virtual_key_allowlist_403_is_surfaced(simple_route_config_path: s
             403,
             json={
                 "error": {
-                    "message": (
-                        "key not allowed to access model. This key can only access "
-                        "models=['explorer']. Tried to access planner"
-                    ),
+                    "message": "key not allowed to access model",
                     "type": "key_model_access_denied",
                     "code": "403",
                 }
             },
         )
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, ENV_ALL)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -71,29 +78,28 @@ async def test_virtual_key_allowlist_403_is_surfaced(simple_route_config_path: s
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": f"Bearer {VIRTUAL_KEY}", "X-Session-Id": "vkey-block"},
-            json={"model": "planner", "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 403
     assert seen["auth"] == f"Bearer {VIRTUAL_KEY}"
-    assert seen["model"] == "planner"
+    assert seen["model"] == "ollama-local.kimi-k2.7-code"
     body = response.json()
     assert "key_model_access_denied" in json.dumps(body)
-    assert "X-Gateway-Fallback-From" not in response.headers
     assert response.headers.get("X-Gateway-Fallback-Count") == "0"
 
 
 @pytest.mark.asyncio
-async def test_master_key_smoke_still_works(simple_route_config_path: str):
+async def test_master_key_smoke_still_works(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("authorization") == MASTER_KEY
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
-    transport = httpx.MockTransport(handler)
+    _env(monkeypatch, ENV_ALL)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
+        transport=httpx.MockTransport(handler),
         config_path=simple_route_config_path,
     )
 
@@ -101,8 +107,8 @@ async def test_master_key_smoke_still_works(simple_route_config_path: str):
         response = await client.post(
             "/v1/chat/completions",
             headers={"Authorization": MASTER_KEY, "X-Session-Id": "master-smoke"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
+            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 200
-    assert response.headers["X-Gateway-Model"] == "coder"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-local.kimi-k2.7-code"

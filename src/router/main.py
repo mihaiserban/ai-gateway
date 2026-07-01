@@ -21,9 +21,10 @@ from router.health import all_ready, gather_health
 from router.live_catalog import build_live_model_catalog
 from router.metrics import Metrics
 from router.redaction import redact_payload
-from router.routing import _timeout_for, choose_model, next_fallback
+from router.routing import DEFAULT_TIMEOUT_SECONDS, is_retryable_failure, resolve_model_request
+from router.routing_state import GatewayRoutingState
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
-from router.usage_events import HttpUsageEventSink, UsageEvent, estimate_cost_usd, extract_usage, fingerprint
+from router.usage_events import HttpUsageEventSink, UsageEvent, extract_usage, fingerprint
 
 FORWARDED_HEADERS = {"authorization", "content-type", "accept"}
 CACHE_RESPONSE_HEADERS = {
@@ -68,6 +69,7 @@ def create_app(
     )
     app.state.session_store = _session_store(app.state.redis_url)
     app.state.metrics = Metrics()
+    app.state.routing_state = GatewayRoutingState(quota_cooldown_seconds=app.state.route_config.quota_cooldown_seconds)
     app.state.usage_sink = usage_sink or HttpUsageEventSink(os.environ.get("USAGE_LEDGER_URL"))
     app.state.async_sleep = asyncio.sleep
     register_dashboard(app)
@@ -88,7 +90,9 @@ def create_app(
 
     @app.get("/metrics")
     async def metrics() -> JSONResponse:
-        return JSONResponse(status_code=200, content=app.state.metrics.snapshot())
+        payload = app.state.metrics.snapshot()
+        payload["routing_state"] = app.state.routing_state.snapshot()
+        return JSONResponse(status_code=200, content=payload)
 
     @app.get("/v1/models")
     async def models(request: Request) -> Response:
@@ -121,125 +125,142 @@ def create_app(
             return JSONResponse(status_code=422, content={"error": "request body must be valid JSON"})
         if not isinstance(body, dict):
             return JSONResponse(status_code=422, content={"error": "request body must be a JSON object"})
-        token = request.headers.get("authorization")
-        session_id = request.headers.get("X-Session-Id") or _fallback_session_id(body, token)
-        session = await app.state.session_store.get(session_id)
-        decision = choose_model(body, session=session, now=time.time(), config=app.state.route_config)
+
+        config = app.state.route_config
+        state = app.state.routing_state
+        now = time.time()
+        auth = request.headers.get("authorization")
+        x_session_id = request.headers.get("X-Session-Id")
+        requested_model_raw = body.get("model")
+        requested_model = requested_model_raw if isinstance(requested_model_raw, str) else None
+
+        resolved = resolve_model_request(requested_model, config, state, now=now)
+
+        if resolved.kind == "not-found":
+            return _gateway_error(
+                status_code=404,
+                error_type="gateway_model_not_found",
+                message=f"model {resolved.requested_model!r} is not configured",
+                requested_model=resolved.requested_model,
+                extra_headers=_gateway_headers(resolved, served="", attempted=[], fallback_count=0),
+            )
+        if resolved.kind == "unavailable":
+            return _gateway_error(
+                status_code=503,
+                error_type="gateway_no_active_deployment",
+                message=f"no active deployment for model {resolved.requested_model!r}",
+                requested_model=resolved.requested_model,
+                inactive_reasons=_inactive_reasons(config, resolved.requested_model),
+                extra_headers=_gateway_headers(resolved, served="", attempted=[], fallback_count=0),
+            )
 
         upstream_body = redact_payload(body)
         is_stream = bool(body.get("stream"))
 
-        cache_key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+        # Warm-session stickiness only applies when an explicit X-Session-Id is
+        # present. The fallback session id (prompt-derived) is used for usage
+        # accounting only and must NOT pin a deployment.
+        warm_deployment = await _resolve_warm_deployment(app, x_session_id, auth, resolved, state, now)
+        ordered = list(resolved.ordered_deployments)
+        if warm_deployment is not None and warm_deployment in ordered:
+            ordered.remove(warm_deployment)
+            ordered.insert(0, warm_deployment)
 
-        original_model = decision.model
-        current_model = original_model
+        session_id = x_session_id or _fallback_session_id(body, auth)
+        session_key = _warm_session_key(x_session_id, auth)
+
+        attempted: list[str] = []
         last_response: httpx.Response | None = None
         last_exception: Exception | None = None
-        attempt = 0
-        tried: set[str] = {original_model}
+        fallback_count = 0
 
-        def _provider_model(model: str) -> str:
-            return str(app.state.route_config.provider_models.get(model, model))
-
-        while True:
-            upstream_body["model"] = current_model
+        for index, deployment_id in enumerate(ordered):
+            upstream_body["model"] = deployment_id
             if is_stream:
                 upstream_body["stream_options"] = {
                     **(upstream_body.get("stream_options") or {}),
                     "include_usage": True,
                 }
-            if current_model in app.state.route_config.cache_key_aliases:
-                upstream_body["prompt_cache_key"] = cache_key
-            elif "prompt_cache_key" in upstream_body:
-                del upstream_body["prompt_cache_key"]
+            attempted.append(deployment_id)
+            attempt_token = state.start_attempt(deployment_id)
+            attempt_started = time.perf_counter()
             try:
                 if is_stream:
-                    response = await _proxy_stream(request, "/v1/chat/completions", upstream_body, current_model)
+                    response = await _proxy_stream(request, "/v1/chat/completions", upstream_body)
                 else:
-                    response = await _proxy_json(request, "/v1/chat/completions", upstream_body, current_model)
+                    response = await _proxy_json(request, "/v1/chat/completions", upstream_body)
             except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exception = exc
                 last_response = None
+                latency_ms = (time.perf_counter() - attempt_started) * 1000
+                state.finish_attempt(attempt_token, status="transport_error", latency_ms=latency_ms)
                 app.state.metrics.record_provider_attempt(
-                    current_model,
-                    _exception_status(exc),
-                    success=False,
-                    retryable_failure=True,
-                    provider_model=_provider_model(current_model),
+                    deployment_id, _exception_status(exc), success=False, retryable_failure=True
                 )
-            else:
-                last_response = response
-                last_exception = None
-                if is_stream and not _is_success(response):
-                    await response.aread()
-                should_fallback = _should_fallback_response(response)
-                app.state.metrics.record_provider_attempt(
-                    current_model,
-                    response.status_code,
-                    success=_is_success(response),
-                    retryable_failure=should_fallback,
-                    provider_model=_provider_model(current_model),
-                )
-                if _is_success(response):
-                    break
-                if not should_fallback:
-                    break
-                if is_stream:
-                    await response.aclose()
-
-            next_model = next_fallback(original_model, attempt, app.state.route_config)
-            if next_model is None or next_model in tried:
-                break
-            delay = min(
-                app.state.route_config.retry_base_delay * (2**attempt),
-                app.state.route_config.retry_max_delay,
+                fallback_count = index + 1
+                continue
+            latency_ms = (time.perf_counter() - attempt_started) * 1000
+            last_response = response
+            last_exception = None
+            success = _is_success(response)
+            should_fallback = not success and is_retryable_failure(response.status_code)
+            state.finish_attempt(attempt_token, status=response.status_code, latency_ms=latency_ms)
+            app.state.metrics.record_provider_attempt(
+                deployment_id,
+                response.status_code,
+                success=success,
+                retryable_failure=should_fallback,
             )
+            if success:
+                break
+            if is_stream and not success:
+                # Read and close the failed stream attempt so its connection
+                # returns to the pool, but keep last_response pointing at it
+                # so the post-loop pass-through can return the upstream error
+                # body with gateway headers.
+                await response.aread()
+                await response.aclose()
+            if not should_fallback:
+                break
+            if index == len(ordered) - 1:
+                break
+            delay = min(config.retry_base_delay * (2**index), config.retry_max_delay)
             await app.state.async_sleep(delay)
-            current_model = next_model
-            tried.add(current_model)
-            attempt += 1
+            fallback_count = index + 1
 
-        fallback_count = attempt
-        provider_model = app.state.route_config.provider_models.get(current_model, "")
-        latency_ms = int((time.perf_counter() - start) * 1000)
+        served_deployment = attempted[-1] if attempted else ""
+        total_latency_ms = int((time.perf_counter() - start) * 1000)
+
+        gateway_headers = _gateway_headers(
+            resolved, served=served_deployment, attempted=attempted, fallback_count=fallback_count
+        )
 
         if last_response is not None and _is_success(last_response):
             await app.state.session_store.set(
-                session_id,
+                session_key,
                 {
-                    "model": current_model,
-                    "last_used_ts": time.time(),
-                    "reason": decision.reason,
-                    "fallback_count": fallback_count,
+                    "requested_model": resolved.requested_model,
+                    "model_kind": resolved.kind,
+                    "served_deployment": served_deployment,
+                    "timestamp": time.time(),
                 },
-                ttl_seconds=app.state.route_config.cache_ttl_seconds,
+                ttl_seconds=config.cache_ttl_seconds,
             )
 
-        extra_headers = {
-            "X-Gateway-Model": current_model,
-            "X-Gateway-Provider-Model": provider_model,
-            "X-Gateway-Reason": decision.reason,
-            "X-Gateway-Fallback-Count": str(fallback_count),
-        }
-        if fallback_count > 0:
-            extra_headers["X-Gateway-Fallback-From"] = original_model
+        status = last_response.status_code if last_response is not None else 502
 
-        if last_response is not None:
-            status = last_response.status_code
-        else:
-            status = 504 if isinstance(last_exception, httpx.TimeoutException) else 502
         _log_request(
             session_id,
-            current_model,
-            provider_model,
-            decision.reason,
+            served_deployment,
+            resolved.requested_model,
+            resolved.kind,
             status,
-            latency_ms,
+            total_latency_ms,
             fallback_count,
-            original_model,
+            attempted,
         )
         cache_hit = _cache_hit(last_response) if last_response is not None else None
-        app.state.metrics.record(original_model, current_model, fallback_count, cache_hit=cache_hit)
+        app.state.metrics.record(resolved.requested_model, served_deployment, fallback_count, cache_hit=cache_hit)
 
         upstream_payload: dict[str, Any] | None = None
         if last_response is not None and not is_stream:
@@ -255,15 +276,15 @@ def create_app(
                 app,
                 request=request,
                 session_id=session_id,
-                requested_model=decision.model,
-                selected_model=original_model,
-                served_model=current_model,
-                provider_model=provider_model,
-                reason=decision.reason,
+                requested_model=resolved.requested_model,
+                selected_model=resolved.requested_model,
+                served_model=served_deployment,
+                provider_model=served_deployment,
+                reason=resolved.kind,
                 status=status,
-                latency_ms=latency_ms,
+                latency_ms=total_latency_ms,
                 fallback_count=fallback_count,
-                fallback_from=original_model,
+                fallback_from=resolved.requested_model if fallback_count > 0 else None,
                 cache_hit=cache_hit,
                 payload=upstream_payload,
                 error_class=_exception_class(last_exception),
@@ -274,40 +295,53 @@ def create_app(
             if is_stream and _is_success(last_response):
                 return _streaming_response(
                     last_response,
-                    extra_headers=extra_headers,
+                    extra_headers=gateway_headers,
                     on_close=_make_usage_event_callback(
                         app,
                         request=request,
                         session_id=session_id,
-                        requested_model=decision.model,
-                        selected_model=original_model,
-                        served_model=current_model,
-                        provider_model=provider_model,
-                        reason=decision.reason,
+                        requested_model=resolved.requested_model,
+                        selected_model=resolved.requested_model,
+                        served_model=served_deployment,
+                        provider_model=served_deployment,
+                        reason=resolved.kind,
                         status=status,
-                        latency_ms=latency_ms,
+                        latency_ms=total_latency_ms,
                         fallback_count=fallback_count,
-                        fallback_from=original_model,
+                        fallback_from=resolved.requested_model if fallback_count > 0 else None,
                         cache_hit=cache_hit,
                         error_class=_exception_class(last_exception),
                         stream=is_stream,
                     ),
                 )
+            # HTTP-failure exhaustion (including streaming that failed before
+            # a stream started): pass through the last upstream error body
+            # and status code with gateway headers attached.
             if is_stream:
-                content = await last_response.aread()
-                await last_response.aclose()
                 return Response(
-                    content=content,
+                    content=last_response.content,
                     status_code=last_response.status_code,
                     media_type=last_response.headers.get("content-type", "application/json"),
-                    headers=extra_headers,
+                    headers=gateway_headers,
                 )
-            return _response_from_upstream(last_response, extra_headers=extra_headers)
+            return _response_from_upstream(last_response, extra_headers=gateway_headers)
 
+        # Transport-failure exhaustion: all candidates failed with transport
+        # exceptions before a response stream started. Return 502 with the
+        # mandated gateway_upstream_exhausted error shape.
+        last_status = _exception_status(last_exception) if last_exception is not None else "transport_error"
         return JSONResponse(
-            status_code=status,
-            content={"error": "upstream request failed"},
-            headers=extra_headers,
+            status_code=502,
+            content={
+                "error": {
+                    "type": "gateway_upstream_exhausted",
+                    "message": "All candidate deployments failed before a response stream started.",
+                    "model": resolved.requested_model,
+                    "attempted": attempted,
+                    "last_status": last_status,
+                }
+            },
+            headers=gateway_headers,
         )
 
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -321,29 +355,34 @@ def create_app(
         request: Request,
         path: str,
         body: dict[str, Any],
-        model: str,
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
-        timeout = _timeout_for(app.state.route_config, model)
         guard = app.state.upstream_semaphore or nullcontext()
         async with guard:
             return cast(
                 httpx.Response,
-                await app.state.http_client.post(url, headers=_forward_headers(request), json=body, timeout=timeout),
+                await app.state.http_client.post(
+                    url, headers=_forward_headers(request), json=body, timeout=DEFAULT_TIMEOUT_SECONDS
+                ),
             )
 
     async def _proxy_stream(
         request: Request,
         path: str,
         body: dict[str, Any],
-        model: str,
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
-        timeout = _timeout_for(app.state.route_config, model)
         guard = app.state.upstream_semaphore or nullcontext()
         async with guard:
             req = app.state.http_client.build_request("POST", url, headers=_forward_headers(request), json=body)
-            req.extensions = {"timeout": {"connect": timeout, "read": timeout, "write": timeout, "pool": timeout}}
+            req.extensions = {
+                "timeout": {
+                    "connect": DEFAULT_TIMEOUT_SECONDS,
+                    "read": DEFAULT_TIMEOUT_SECONDS,
+                    "write": DEFAULT_TIMEOUT_SECONDS,
+                    "pool": DEFAULT_TIMEOUT_SECONDS,
+                }
+            }
             return cast(httpx.Response, await app.state.http_client.send(req, stream=True))
 
     return app
@@ -355,100 +394,31 @@ def _is_success(response: httpx.Response) -> bool:
 
 def _log_request(
     session_id: str,
-    model: str,
-    provider_model: str,
+    served_deployment: str,
+    requested_model: str,
     reason: str,
     status: int | str,
     latency_ms: int,
     fallback_count: int,
-    fallback_from: str,
+    attempted: list[str],
 ) -> None:
     session_id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
     parts = [
         f"session_id_hash={session_id_hash}",
-        f"model={model}",
+        f"model={served_deployment}",
     ]
-    if provider_model:
-        parts.append(f"provider_model={provider_model}")
     parts.extend(
         [
+            f"requested_model={requested_model}",
             f"reason={reason}",
             f"status={status}",
             f"latency_ms={latency_ms}",
             f"fallback_count={fallback_count}",
         ]
     )
-    if fallback_count > 0:
-        parts.append(f"fallback_from={fallback_from}")
+    if fallback_count > 0 and attempted:
+        parts.append(f"fallback_from={attempted[0]}")
     logger.info(" ".join(parts))
-
-
-def _should_fallback_response(response: httpx.Response) -> bool:
-    status_code = response.status_code
-    if 200 <= status_code < 300:
-        return False
-    if status_code in {500, 502, 503, 504}:
-        return True
-
-    message = _error_text(response)
-    if _has_any(message, CALLER_LIMIT_ERROR_MARKERS):
-        return False
-
-    if status_code in {402, 429}:
-        return True
-    if status_code == 403:
-        return _has_any(message, PROVIDER_ACCESS_ERROR_MARKERS)
-    if status_code == 404:
-        return _has_any(message, PROVIDER_MODEL_ERROR_MARKERS)
-    if status_code == 400:
-        return _has_any(message, PROVIDER_REQUEST_ERROR_MARKERS)
-    return False
-
-
-CALLER_LIMIT_ERROR_MARKERS = (
-    "virtual key",
-    "allowed models",
-    "not allowed to access",
-)
-
-PROVIDER_ACCESS_ERROR_MARKERS = (
-    "subscription",
-    "entitlement",
-    "does not include",
-    "do not have access",
-    "don't have access",
-    "region",
-    "not enabled",
-)
-
-PROVIDER_MODEL_ERROR_MARKERS = (
-    "model",
-    "deployment",
-    "deprecated",
-)
-
-PROVIDER_REQUEST_ERROR_MARKERS = (
-    "context length",
-    "maximum context",
-    "too many tokens",
-    "unsupported parameter",
-    "unsupported param",
-    "unsupported tool",
-    "tools not supported",
-    "functions not supported",
-)
-
-
-def _error_text(response: httpx.Response) -> str:
-    try:
-        payload = response.json()
-    except Exception:
-        return response.text.lower()
-    return json.dumps(payload, sort_keys=True).lower()
-
-
-def _has_any(value: str, markers: tuple[str, ...]) -> bool:
-    return any(marker in value for marker in markers)
 
 
 def _exception_status(exc: Exception) -> str:
@@ -488,7 +458,7 @@ async def _emit_usage_event(
     status: int | str,
     latency_ms: int,
     fallback_count: int,
-    fallback_from: str,
+    fallback_from: str | None,
     cache_hit: bool | None,
     payload: dict[str, Any] | None,
     error_class: str | None,
@@ -511,9 +481,7 @@ async def _emit_usage_event(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
-        estimated_cost_usd=estimate_cost_usd(
-            served_model, prompt_tokens, completion_tokens, app.state.route_config.model_prices
-        ),
+        estimated_cost_usd=None,
         cache_status=_cache_status(cache_hit),
         fallback_count=fallback_count,
         fallback_from=fallback_from if fallback_count > 0 else None,
@@ -679,6 +647,94 @@ def _session_store(redis_url: str | None) -> SessionStore:
     if redis_url:
         return RedisSessionStore(redis_url)
     return MemorySessionStore()
+
+
+def _gateway_headers(
+    resolved: Any,
+    *,
+    served: str,
+    attempted: list[str],
+    fallback_count: int,
+) -> dict[str, str]:
+    headers = {
+        "X-Gateway-Requested-Model": resolved.requested_model,
+        "X-Gateway-Model-Kind": resolved.kind,
+        "X-Gateway-Served-Deployment": served,
+        "X-Gateway-Fallback-Count": str(fallback_count),
+        "X-Gateway-Attempted-Models": ",".join(attempted) if attempted else "",
+    }
+    if fallback_count > 0 and attempted:
+        headers["X-Gateway-Fallback-From"] = attempted[0]
+    return headers
+
+
+def _gateway_error(
+    *,
+    status_code: int,
+    error_type: str,
+    message: str,
+    requested_model: str,
+    extra_headers: dict[str, str],
+    inactive_reasons: list[dict[str, Any]] | None = None,
+) -> JSONResponse:
+    error: dict[str, Any] = {"type": error_type, "message": message, "model": requested_model}
+    if inactive_reasons is not None:
+        error["inactive_reasons"] = inactive_reasons
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": error},
+        headers=extra_headers,
+    )
+
+
+def _inactive_reasons(config: Any, requested_model: str) -> list[dict[str, Any]]:
+    from router.live_catalog import deployment_is_active
+
+    env = os.environ
+    reasons: list[dict[str, Any]] = []
+    deployment_ids = config.registry_models.get(requested_model, [])
+    if not deployment_ids:
+        combo = config.combos.get(requested_model)
+        if combo is not None:
+            deployment_ids = list(combo.candidates)
+    for dep_id in deployment_ids:
+        dep = config.deployments.get(dep_id)
+        if dep is None:
+            reasons.append({"deployment_id": dep_id, "reason": "not_configured"})
+            continue
+        active, missing = deployment_is_active(dep, env)
+        if not active:
+            reasons.append({"deployment_id": dep_id, "reason": "missing_env", "missing_env": missing})
+    return reasons
+
+
+async def _resolve_warm_deployment(
+    app: FastAPI,
+    x_session_id: str | None,
+    auth: str | None,
+    resolved: Any,
+    state: GatewayRoutingState,
+    now: float,
+) -> str | None:
+    if not x_session_id:
+        return None
+    session_key = _warm_session_key(x_session_id, auth)
+    session = await app.state.session_store.get(session_key)
+    if not session:
+        return None
+    served = session.get("served_deployment")
+    if not isinstance(served, str) or served not in resolved.ordered_deployments:
+        return None
+    if state.in_quota_cooldown(served, now):
+        return None
+    return served
+
+
+def _warm_session_key(x_session_id: str | None, auth: str | None) -> str:
+    if not x_session_id:
+        return ""
+    auth_fp = hashlib.sha256((auth or "").encode("utf-8")).hexdigest() if auth else ""
+    return hashlib.sha256(f"{auth_fp}:{x_session_id}".encode()).hexdigest()
 
 
 app = create_app()

@@ -206,7 +206,7 @@ async def test_dashboard_live_api_returns_json_shape():
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"health", "readiness", "metrics", "redis", "config", "catalog"}
+    assert set(payload) == {"health", "readiness", "metrics", "redis", "config", "catalog", "routing_state"}
     assert payload["config"]["default_model"] == "coder"
     assert "enabled" in payload["redis"]
     assert "counts" in payload["catalog"]
@@ -233,7 +233,7 @@ async def test_dashboard_usage_api_defaults_to_30_days_when_ledger_disabled():
 
 
 @pytest.mark.asyncio
-async def test_dashboard_routes_do_not_break_chat_or_metrics():
+async def test_dashboard_routes_do_not_break_chat_or_metrics(monkeypatch):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -243,6 +243,14 @@ async def test_dashboard_routes_do_not_break_chat_or_metrics():
             },
         )
 
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,

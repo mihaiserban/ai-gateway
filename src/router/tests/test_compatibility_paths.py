@@ -5,9 +5,14 @@ import pytest
 
 from router.main import create_app
 
+ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
+ENV_GO = {"OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
+ENV_DEEPSEEK = {"DEEPSEEK_API_KEY": "x"}
+ENV_ALL = {**ENV_OLLAMA, **ENV_GO, **ENV_DEEPSEEK}
+
 
 @pytest.mark.asyncio
-async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_headers():
+async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_headers(monkeypatch):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -17,6 +22,8 @@ async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_header
         seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "OK"}}]})
 
+    for key, value in ENV_ALL.items():
+        monkeypatch.setenv(key, value)
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=httpx.MockTransport(handler))
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -30,8 +37,8 @@ async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_header
     assert seen["url"] == "http://litellm:4000/v1/chat/completions"
     assert seen["authorization"] == "Bearer virtual-key"
     assert seen["content_type"] == "application/json"
-    assert seen["body"]["model"] == "coder"
-    assert response.headers["X-Gateway-Model"] == "coder"
+    assert seen["body"]["model"] == "ollama-local.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-local.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio
@@ -69,12 +76,14 @@ async def test_models_compat_returns_live_gateway_catalog(
 
 
 @pytest.mark.asyncio
-async def test_streaming_chat_compat_preserves_sse_content_type_and_body():
+async def test_streaming_chat_compat_preserves_sse_content_type_and_body(monkeypatch):
     sse_body = b'data: {"choices":[{"delta":{"content":"O"}}]}\n\ndata: [DONE]\n\n'
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=sse_body, headers={"content-type": "text/event-stream"})
 
+    for key, value in ENV_ALL.items():
+        monkeypatch.setenv(key, value)
     app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=httpx.MockTransport(handler))
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:

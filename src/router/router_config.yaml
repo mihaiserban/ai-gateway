@@ -15,6 +15,14 @@ combos:
     - ollama-local.deepseek-v4-flash
     - deepseek-api.deepseek-v4-flash
     - opencode-go.deepseek-v4-flash
+    task: explore
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   planner:
     strategy: score
     candidates:
@@ -22,12 +30,28 @@ combos:
     - opencode-go.glm-5.2
     - deepseek-api.deepseek-v4-pro
     - opencode-go.kimi-k2.7-code
+    task: plan
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   coder:
     strategy: score
     candidates:
     - ollama-local.kimi-k2.7-code
     - deepseek-api.deepseek-v4-pro
     - opencode-go.kimi-k2.7-code
+    task: build
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   coder-fast:
     strategy: score
     candidates:
@@ -35,11 +59,27 @@ combos:
     - deepseek-api.deepseek-v4-flash
     - opencode-go.deepseek-v4-flash
     - opencode-go.kimi-k2.6
+    task: quick-build
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
   vision:
     strategy: score
     candidates:
     - ollama-local.kimi-k2.6
     - opencode-go.kimi-k2.6
+    task: vision
+    scoring:
+      health: 0.3
+      latency: 0.2
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.1
+      priority: 0.1
 deployments:
   ollama-local.deepseek-v4-flash:
     provider: ollama
@@ -54,6 +94,9 @@ deployments:
     - coding
     - fast
     context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
   ollama-local.glm-5.2:
     provider: ollama
     connection: ollama-local
@@ -67,6 +110,9 @@ deployments:
     - coding
     - reasoning
     context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
   ollama-local.kimi-k2.7-code:
     provider: ollama
     connection: ollama-local
@@ -79,6 +125,9 @@ deployments:
     - chat
     - coding
     context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
   ollama-local.deepseek-v4-pro:
     provider: ollama
     connection: ollama-local
@@ -92,6 +141,9 @@ deployments:
     - coding
     - reasoning
     context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
   ollama-local.kimi-k2.6:
     provider: ollama
     connection: ollama-local
@@ -105,6 +157,9 @@ deployments:
     - coding
     - fast
     context_length: 128000
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
   deepseek-api.deepseek-v4-flash:
     provider: deepseek
     connection: deepseek-api
@@ -119,6 +174,9 @@ deployments:
     context_length: 128000
     input_cost_per_token: 1.4e-07
     output_cost_per_token: 2.8e-07
+    priority: 30
+    stability: 0.9
+    max_concurrent: 20
   deepseek-api.deepseek-v4-pro:
     provider: deepseek
     connection: deepseek-api
@@ -133,6 +191,9 @@ deployments:
     context_length: 128000
     input_cost_per_token: 2.8e-07
     output_cost_per_token: 5.6e-07
+    priority: 30
+    stability: 0.9
+    max_concurrent: 20
   opencode-go.deepseek-v4-flash:
     provider: opencode-go
     connection: opencode-go
@@ -146,6 +207,9 @@ deployments:
     - coding
     - fast
     context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
   opencode-go.glm-5.2:
     provider: opencode-go
     connection: opencode-go
@@ -159,6 +223,9 @@ deployments:
     - coding
     - reasoning
     context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
   opencode-go.kimi-k2.7-code:
     provider: opencode-go
     connection: opencode-go
@@ -171,6 +238,9 @@ deployments:
     - chat
     - coding
     context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
   opencode-go.kimi-k2.6:
     provider: opencode-go
     connection: opencode-go
@@ -184,6 +254,9 @@ deployments:
     - coding
     - fast
     context_length: 128000
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
 registry_models:
   deepseek-v4-flash:
   - ollama-local.deepseek-v4-flash

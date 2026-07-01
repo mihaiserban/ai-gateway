@@ -61,6 +61,7 @@ async def live_payload(app_state: Any, health: dict[str, str], readiness: dict[s
     config = app_state.route_config
     redis_stats = await app_state.redis_stats_collector.snapshot()
     catalog = _catalog_summary(config)
+    routing_state = _routing_state_snapshot(app_state)
     return {
         "health": health,
         "readiness": readiness,
@@ -73,7 +74,15 @@ async def live_payload(app_state: Any, health: dict[str, str], readiness: dict[s
             "deployments": sorted(config.deployments),
         },
         "catalog": {"counts": catalog},
+        "routing_state": routing_state,
     }
+
+
+def _routing_state_snapshot(app_state: Any) -> dict[str, Any]:
+    state = getattr(app_state, "routing_state", None)
+    if state is None:
+        return {"enabled": False}
+    return dict(state.snapshot())
 
 
 def _catalog_summary(config: Any) -> dict[str, int]:

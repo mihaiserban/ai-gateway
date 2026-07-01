@@ -13,7 +13,7 @@ _SRC_DIR = Path(__file__).resolve().parents[1]
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
-from router.gateway_config import Deployment, GatewayCatalog, load_gateway_catalog  # noqa: E402
+from router.gateway_config import Deployment, GatewayCatalog, ScoringWeights, load_gateway_catalog  # noqa: E402
 
 SRC_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = SRC_ROOT / "gateway.config.yaml"
@@ -52,11 +52,26 @@ def _render_combos(catalog: GatewayCatalog) -> dict[str, Any]:
     rendered: dict[str, Any] = {}
     for combo_id, combo in catalog.combos.items():
         candidates = [_deployment_id_for(catalog, c.connection_id, c.model_id) for c in combo.candidates]
-        rendered[combo_id] = {
+        entry: dict[str, Any] = {
             "strategy": combo.strategy,
             "candidates": candidates,
         }
+        if combo.task is not None:
+            entry["task"] = combo.task
+        entry["scoring"] = _render_scoring(combo.scoring)
+        rendered[combo_id] = entry
     return rendered
+
+
+def _render_scoring(weights: ScoringWeights) -> dict[str, float]:
+    return {
+        "health": weights.health,
+        "latency": weights.latency,
+        "quota": weights.quota,
+        "stability": weights.stability,
+        "connection_density": weights.connection_density,
+        "priority": weights.priority,
+    }
 
 
 def _deployment_id_for(catalog: GatewayCatalog, connection_id: str, model_id: str) -> str:
@@ -95,6 +110,12 @@ def _render_deployments(catalog: GatewayCatalog) -> dict[str, Any]:
             entry["input_cost_per_token"] = deployment.input_cost_per_token
         if deployment.output_cost_per_token is not None:
             entry["output_cost_per_token"] = deployment.output_cost_per_token
+        if deployment.priority != 100:
+            entry["priority"] = deployment.priority
+        if deployment.stability != 0.8:
+            entry["stability"] = deployment.stability
+        if deployment.max_concurrent is not None:
+            entry["max_concurrent"] = deployment.max_concurrent
         rendered[deployment_id] = entry
     return rendered
 

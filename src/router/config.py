@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig
+from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig, ScoringWeights
 
 logger = logging.getLogger("router.config")
 
@@ -73,10 +74,33 @@ def _load_combos(raw: dict[str, Any]) -> dict[str, ComboRuntime]:
         strategy = str(body.get("strategy", "score"))
         candidates_raw = body.get("candidates") or []
         candidates = tuple(str(c) for c in candidates_raw) if isinstance(candidates_raw, list) else ()
+        scoring = _load_scoring(body.get("scoring"))
         task_raw = body.get("task")
         task = str(task_raw) if isinstance(task_raw, str) else None
-        combos[combo_id] = ComboRuntime(strategy=strategy, candidates=candidates, task=task)
+        combos[combo_id] = ComboRuntime(strategy=strategy, candidates=candidates, task=task, scoring=scoring)
     return combos
+
+
+def _load_scoring(raw: Any) -> ScoringWeights | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        return None
+    kwargs: dict[str, float] = {}
+    for key, default in (
+        ("health", 0.30),
+        ("latency", 0.20),
+        ("quota", 0.15),
+        ("stability", 0.15),
+        ("connection_density", 0.10),
+        ("priority", 0.10),
+    ):
+        value = raw.get(key, default)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            kwargs[key] = float(value)
+        else:
+            kwargs[key] = default
+    return ScoringWeights(**kwargs)
 
 
 def _load_deployments(raw: dict[str, Any]) -> dict[str, DeploymentRuntime]:
@@ -108,6 +132,9 @@ def _load_deployments(raw: dict[str, Any]) -> dict[str, DeploymentRuntime]:
             context_length=context_length,
             input_cost_per_token=input_cost,
             output_cost_per_token=output_cost,
+            priority=_int_or_default(body, "priority", 100),
+            stability=_float_or_default(body, "stability", 0.8),
+            max_concurrent=_optional_int(body, "max_concurrent"),
         )
     return deployments
 
@@ -115,6 +142,29 @@ def _load_deployments(raw: dict[str, Any]) -> dict[str, DeploymentRuntime]:
 def _optional_float(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
+    return float(value)
+
+
+def _optional_int(data: Mapping[str, Any], key: str) -> int | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _int_or_default(data: Mapping[str, Any], key: str, default: int) -> int:
+    value = data.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return value
+
+
+def _float_or_default(data: Mapping[str, Any], key: str, default: float) -> float:
+    value = data.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return default
     return float(value)
 
 

@@ -1,23 +1,51 @@
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from router.routing_state import GatewayRoutingState
 
 DEFAULT_TIMEOUT_SECONDS = 120
 
+DEFAULT_SCORING = {
+    "health": 0.30,
+    "latency": 0.20,
+    "quota": 0.15,
+    "stability": 0.15,
+    "connection_density": 0.10,
+    "priority": 0.10,
+}
+
 
 @dataclass(frozen=True)
+class ScoringWeights:
+    health: float = DEFAULT_SCORING["health"]
+    latency: float = DEFAULT_SCORING["latency"]
+    quota: float = DEFAULT_SCORING["quota"]
+    stability: float = DEFAULT_SCORING["stability"]
+    connection_density: float = DEFAULT_SCORING["connection_density"]
+    priority: float = DEFAULT_SCORING["priority"]
+
+
+@dataclass
 class ComboRuntime:
     """Runtime representation of a combo, with candidate deployment ids."""
 
     strategy: str = "score"
     candidates: tuple[str, ...] = ()
     task: str | None = None
+    scoring: ScoringWeights | None = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class DeploymentRuntime:
-    """Runtime representation of a configured deployment."""
+    """Runtime representation of a configured deployment.
+
+    Mutable so routing-state tests can adjust ``max_concurrent`` in place.
+    """
 
     provider: str
     connection: str
@@ -28,6 +56,9 @@ class DeploymentRuntime:
     context_length: int | None = None
     input_cost_per_token: float | None = None
     output_cost_per_token: float | None = None
+    priority: int = 100
+    stability: float = 0.8
+    max_concurrent: int | None = None
 
 
 @dataclass(frozen=True)
@@ -46,52 +77,109 @@ class RouteConfig:
 
 
 @dataclass(frozen=True)
-class RouteDecision:
-    model: str
-    reason: str
+class ResolvedModel:
+    """The outcome of resolving a client model request against the live catalog.
+
+    ``kind`` is one of ``combo``, ``registry-model``, ``connection-model``,
+    ``unavailable`` (known id but no active deployments), or ``not-found``.
+    ``ordered_deployments`` is the candidate deployment ids after active
+    filtering and strategy ordering; empty for ``unavailable``/``not-found``.
+    """
+
+    kind: str
+    ordered_deployments: list[str]
+    requested_model: str
 
 
-def _timeout_for(config: RouteConfig, model: str) -> int:
-    """Return the per-deployment timeout, falling back to the default when unset."""
-    _ = config
-    _ = model
-    return DEFAULT_TIMEOUT_SECONDS
+def is_retryable_failure(status: int | str) -> bool:
+    """Return True when a failed attempt should fall back to the next deployment.
+
+    Int status: retryable for {408, 409, 425, 429, 500, 502, 503, 504}.
+    Str status: retryable when it mentions transport/timeout/quota/rate/
+    overloaded/unavailable. Caller errors (400/401/403/404/422) never retry.
+    """
+    if isinstance(status, int):
+        return status in {408, 409, 425, 429, 500, 502, 503, 504}
+    lowered = str(status).lower()
+    return any(word in lowered for word in ("transport", "timeout", "quota", "rate", "overloaded", "unavailable"))
 
 
-def choose_model(
-    request: dict[str, Any],
-    *,
-    session: dict[str, Any] | None,
-    now: float,
+def resolve_model_request(
+    model: str | None,
     config: RouteConfig,
-) -> RouteDecision:
-    explicit_model = request.get("model")
-    if isinstance(explicit_model, str):
-        normalized_model = explicit_model.lower()
-        if normalized_model in config.combos or normalized_model in config.deployments:
-            return RouteDecision(model=normalized_model, reason="explicit-model")
+    state: GatewayRoutingState,
+    now: float,
+    env: Mapping[str, str] | None = None,
+) -> ResolvedModel:
+    """Resolve a client-supplied model id to an ordered candidate deployment list.
 
-    if session and _is_warm(session, now, config.cache_ttl_seconds):
-        session_model = session.get("model")
-        if isinstance(session_model, str) and (session_model in config.combos or session_model in config.deployments):
-            return RouteDecision(model=session_model, reason="warm-session")
+    Resolution order:
+      1. explicit combo id -> combo candidates (active-filtered, ordered)
+      2. explicit deployment id (connection.model) -> forced single deployment
+      3. explicit registry model id -> all active deployments serving it
+      4. missing/null model -> default_model resolution (recurse)
+      5. unknown explicit model -> kind="not-found"
+    A resolution with no active deployments becomes kind="unavailable".
+    """
+    from router.live_catalog import active_deployment_ids
 
-    return RouteDecision(model=config.default_model, reason="default-model")
+    resolved_env = env if env is not None else os.environ
+    active = active_deployment_ids(config, resolved_env)
+
+    requested = model if isinstance(model, str) and model else None
+    if requested is None:
+        return resolve_model_request(config.default_model, config, state, now, env=env)
+
+    # 1. combo
+    combo = config.combos.get(requested)
+    if combo is not None:
+        candidates = [c for c in combo.candidates if c in active]
+        if not candidates:
+            return ResolvedModel(kind="unavailable", ordered_deployments=[], requested_model=requested)
+        ordered = _order_candidates(candidates, combo, config, state, now)
+        return ResolvedModel(kind="combo", ordered_deployments=ordered, requested_model=requested)
+
+    # 2. connection-model (explicit deployment id)
+    if requested in config.deployments:
+        if requested in active:
+            return ResolvedModel(kind="connection-model", ordered_deployments=[requested], requested_model=requested)
+        return ResolvedModel(kind="unavailable", ordered_deployments=[], requested_model=requested)
+
+    # 3. registry model
+    deployment_ids = config.registry_models.get(requested)
+    if deployment_ids is not None:
+        candidates = [d for d in deployment_ids if d in active]
+        if not candidates:
+            return ResolvedModel(kind="unavailable", ordered_deployments=[], requested_model=requested)
+        ordered = _order_candidates(candidates, None, config, state, now)
+        return ResolvedModel(kind="registry-model", ordered_deployments=ordered, requested_model=requested)
+
+    # 5. unknown
+    return ResolvedModel(kind="not-found", ordered_deployments=[], requested_model=requested)
 
 
-def next_fallback(model: str, fallback_count: int, config: RouteConfig) -> str | None:
-    combo = config.combos.get(model)
-    if combo is None:
-        return None
-    candidates = combo.candidates
-    if fallback_count < 0 or fallback_count >= len(candidates):
-        return None
-    return candidates[fallback_count]
+def _order_candidates(
+    candidate_ids: list[str],
+    combo: ComboRuntime | None,
+    config: RouteConfig,
+    state: GatewayRoutingState,
+    now: float,
+) -> list[str]:
+    """Order candidate deployment ids by the combo strategy (score or priority)."""
+    deployments = config.deployments
+    if combo is not None and combo.strategy == "priority":
+        # Priority strategy: order by priority asc (lower is better), keep
+        # cooldown deployments at the end. Stable on configured order.
+        cooled: list[str] = []
+        live: list[str] = []
+        for dep_id in candidate_ids:
+            if state.in_quota_cooldown(dep_id, now):
+                cooled.append(dep_id)
+            else:
+                live.append(dep_id)
+        live.sort(key=lambda d: deployments[d].priority)
+        cooled.sort(key=lambda d: deployments[d].priority)
+        return live + cooled
 
-
-def _is_warm(session: dict[str, Any], now: float, ttl_seconds: int) -> bool:
-    try:
-        last_used = float(session["last_used_ts"])
-    except (KeyError, TypeError, ValueError):
-        return False
-    return now - last_used < ttl_seconds
+    weights = combo.scoring if combo is not None and combo.scoring is not None else None
+    return state.order_deployments(candidate_ids, deployments, weights, now)

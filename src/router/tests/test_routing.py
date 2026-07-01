@@ -1,90 +1,64 @@
-from router.routing import RouteConfig, choose_model, next_fallback
+from router.config import load_route_config
+from router.routing import is_retryable_failure, resolve_model_request
+from router.routing_state import GatewayRoutingState
 
 
-def test_defaults_to_default_model_without_inspecting_content():
-    config = RouteConfig(cache_ttl_seconds=600, allowed_models={"explorer", "coder"}, default_model="explorer")
-    request = {"messages": [{"role": "user", "content": "please refactor src/app.py and explain the root cause"}]}
-
-    decision = choose_model(request, session=None, now=1_000.0, config=config)
-
-    assert decision.model == "explorer"
-    assert decision.reason == "default-model"
+def _config(simple_route_config_path: str):
+    return load_route_config(config_path=simple_route_config_path)
 
 
-def test_keeps_warm_session_model_inside_ttl():
-    config = RouteConfig(cache_ttl_seconds=600)
-    session = {"model": "planner", "last_used_ts": 1_000.0}
-    request = {"messages": [{"role": "user", "content": "simple follow up"}]}
-
-    decision = choose_model(request, session=session, now=1_200.0, config=config)
-
-    assert decision.model == "planner"
-    assert decision.reason == "warm-session"
+def test_combo_resolves_to_combo_candidates(simple_route_config_path: str):
+    config = _config(simple_route_config_path)
+    env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x", "DEEPSEEK_API_KEY": "x"}
+    resolved = resolve_model_request("coder", config, GatewayRoutingState(), now=1000.0, env=env)
+    assert resolved.kind == "combo"
+    assert resolved.ordered_deployments[0].endswith(".kimi-k2.7-code")
 
 
-def test_reclassifies_cold_session_after_ttl():
-    config = RouteConfig(cache_ttl_seconds=600, default_model="explorer")
-    session = {"model": "planner", "last_used_ts": 1_000.0}
-    request = {"messages": [{"role": "user", "content": "simple follow up"}]}
-
-    decision = choose_model(request, session=session, now=1_700.0, config=config)
-
-    assert decision.model == "explorer"
-    assert decision.reason == "default-model"
-
-
-def test_honors_allowed_explicit_model():
-    config = RouteConfig(cache_ttl_seconds=600, allowed_models={"explorer", "explorer-ocg"})
-    request = {
-        "model": "explorer-ocg",
-        "messages": [{"role": "user", "content": "say hello"}],
+def test_registry_model_resolves_to_all_active_deployments(simple_route_config_path: str):
+    config = _config(simple_route_config_path)
+    env = {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
     }
-
-    decision = choose_model(request, session=None, now=1_000.0, config=config)
-
-    assert decision.model == "explorer-ocg"
-    assert decision.reason == "explicit-model"
+    resolved = resolve_model_request("kimi-k2.7-code", config, GatewayRoutingState(), now=1000.0, env=env)
+    assert resolved.kind == "registry-model"
+    assert "ollama-local.kimi-k2.7-code" in resolved.ordered_deployments
 
 
-def test_honors_explicit_model_case_insensitively():
-    config = RouteConfig(cache_ttl_seconds=600, allowed_models={"explorer", "planner"})
-    request = {
-        "model": "PLANNER",
-        "messages": [{"role": "user", "content": "say hello"}],
-    }
-
-    decision = choose_model(request, session=None, now=1_000.0, config=config)
-
-    assert decision.model == "planner"
-    assert decision.reason == "explicit-model"
+def test_connection_model_forces_one_deployment(simple_route_config_path: str):
+    config = _config(simple_route_config_path)
+    env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
+    resolved = resolve_model_request("ollama-local.kimi-k2.7-code", config, GatewayRoutingState(), now=1000.0, env=env)
+    assert resolved.kind == "connection-model"
+    assert resolved.ordered_deployments == ["ollama-local.kimi-k2.7-code"]
 
 
-def test_ignores_unknown_explicit_model():
-    config = RouteConfig(cache_ttl_seconds=600, allowed_models={"explorer"}, default_model="explorer")
-    request = {
-        "model": "unknown",
-        "messages": [{"role": "user", "content": "say hello"}],
-    }
-
-    decision = choose_model(request, session=None, now=1_000.0, config=config)
-
-    assert decision.model == "explorer"
-    assert decision.reason == "default-model"
+def test_inactive_deployments_are_not_routing_candidates(simple_route_config_path: str):
+    config = _config(simple_route_config_path)
+    resolved = resolve_model_request("kimi-k2.7-code", config, GatewayRoutingState(), now=1000.0, env={})
+    assert resolved.kind == "unavailable"
+    assert resolved.ordered_deployments == []
 
 
-def test_next_fallback_returns_next_alias():
-    config = RouteConfig(fallbacks={"planner": ["planner-ocg", "explorer"]})
+def test_unknown_explicit_model_does_not_fallback_to_default(simple_route_config_path: str):
+    config = _config(simple_route_config_path)
+    resolved = resolve_model_request("typo-model", config, GatewayRoutingState(), now=1000.0, env={})
+    assert resolved.kind == "not-found"
+    assert resolved.ordered_deployments == []
 
-    assert next_fallback("planner", 0, config) == "planner-ocg"
-    assert next_fallback("planner", 1, config) == "explorer"
-    assert next_fallback("planner", 2, config) is None
+
+def test_retryable_statuses_fallback_to_next_deployment():
+    assert is_retryable_failure(429)
+    assert is_retryable_failure(503)
+    assert is_retryable_failure("transport_error")
+    assert is_retryable_failure("provider quota exceeded")
 
 
-def test_default_model_can_be_configured():
-    config = RouteConfig(allowed_models={"explorer", "planner"}, default_model="planner")
-    request = {"messages": [{"role": "user", "content": "say hello"}]}
-
-    decision = choose_model(request, session=None, now=1_000.0, config=config)
-
-    assert decision.model == "planner"
-    assert decision.reason == "default-model"
+def test_caller_errors_do_not_fallback():
+    assert not is_retryable_failure(400)
+    assert not is_retryable_failure(401)
+    assert not is_retryable_failure(403)
+    assert not is_retryable_failure(422)

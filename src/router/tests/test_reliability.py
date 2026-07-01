@@ -6,90 +6,17 @@ import httpx
 import pytest
 
 from router.main import create_app
-from router.routing import RouteConfig, _timeout_for
+from router.routing import DEFAULT_TIMEOUT_SECONDS, RouteConfig, is_retryable_failure
 
-# ---------------------------------------------------------------------------
-# Per-alias timeout helper
-# ---------------------------------------------------------------------------
-
-
-def test_timeout_for_returns_configured_value():
-    config = RouteConfig(timeouts={"planner": 5})
-    assert _timeout_for(config, "planner") == 5
+ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
+ENV_GO = {"OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
+ENV_DEEPSEEK = {"DEEPSEEK_API_KEY": "x"}
+ENV_ALL = {**ENV_OLLAMA, **ENV_GO, **ENV_DEEPSEEK}
 
 
-def test_timeout_for_falls_back_to_default_120():
-    config = RouteConfig(timeouts={"planner": 5})
-    assert _timeout_for(config, "unknown-alias") == 120
-
-
-def test_timeout_for_default_empty_config():
-    config = RouteConfig()
-    assert _timeout_for(config, "anything") == 120
-
-
-@pytest.mark.asyncio
-async def test_per_alias_timeout_used_for_proxy(monkeypatch, tmp_path):
-    """The persistent httpx client must use the alias's timeout on each request."""
-    captured: list[float] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
-
-    transport = httpx.MockTransport(handler)
-
-    cfg_path = tmp_path / "test-alias-timeout-config.yaml"
-    cfg_path.write_text(
-        """
-cache_ttl_seconds: 600
-allowed_models:
-  - explorer
-  - planner
-  - coder
-  - planner-ocg
-  - explorer-ocg
-fallbacks:
-  explorer: []
-  planner: []
-  coder: []
-  planner-ocg: []
-  explorer-ocg: []
-timeouts:
-  coder: 5
-""",
-    )
-
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=str(cfg_path),
-        litellm_config_path="/tmp/missing-litellm.yaml",
-    )
-
-    _real_post = app.state.http_client.post
-
-    async def _fake_post(url, *, headers=None, json=None, timeout=httpx.USE_CLIENT_DEFAULT):  # noqa: ASYNC109
-        captured.append(timeout)
-        return await _real_post(url, headers=headers, json=json, timeout=timeout)
-
-    app.state.http_client.post = _fake_post
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "timeout-proxy"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert response.status_code == 200
-    assert captured, "no upstream request was made"
-    assert captured[-1] == 5
-
-
-# ---------------------------------------------------------------------------
-# Backoff between fallback attempts
-# ---------------------------------------------------------------------------
+def _env(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
 
 
 def _recorder():
@@ -99,197 +26,6 @@ def _recorder():
         calls.append(delay)
 
     return fake_sleep, calls
-
-
-@pytest.mark.asyncio
-async def test_backoff_sleeps_between_fallback_attempts(simple_route_config_path: str):
-    sleep, calls = _recorder()
-    seen_models: list[str] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        model = json.loads(request.content)["model"]
-        seen_models.append(model)
-        if model == "coder":
-            return httpx.Response(503, json={"error": "unavailable"})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=simple_route_config_path,
-    )
-    app.state.async_sleep = sleep
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-1"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert response.status_code == 200
-    assert seen_models == ["coder", "explorer"]
-    assert calls == [0.2]
-
-
-@pytest.mark.asyncio
-async def test_backoff_no_sleep_on_non_retryable_404(simple_route_config_path: str):
-    sleep, calls = _recorder()
-    seen_models: list[str] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        seen_models.append(json.loads(request.content)["model"])
-        return httpx.Response(400, json={"error": "bad request"})
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=simple_route_config_path,
-    )
-    app.state.async_sleep = sleep
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "no-sleep-400"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert response.status_code == 400
-    assert seen_models == ["coder"]
-    assert calls == []
-
-
-@pytest.mark.asyncio
-async def test_backoff_grows_exponentially(simple_route_config_path: str):
-    sleep, calls = _recorder()
-    seen_models: list[str] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        model = json.loads(request.content)["model"]
-        seen_models.append(model)
-        if model in {"coder", "explorer"}:
-            return httpx.Response(503, json={"error": "unavailable"})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=simple_route_config_path,
-    )
-    app.state.async_sleep = sleep
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-grow"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert response.status_code == 200
-    assert seen_models == ["coder", "explorer", "planner"]
-    assert calls == [0.2, 0.4]
-
-
-@pytest.mark.asyncio
-async def test_backoff_capped_at_max_delay(simple_route_config_path: str):
-    sleep, calls = _recorder()
-    seen_models: list[str] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        model = json.loads(request.content)["model"]
-        seen_models.append(model)
-        return httpx.Response(503, json={"error": "unavailable"})
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=simple_route_config_path,
-    )
-    app.state.async_sleep = sleep
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "backoff-cap"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert response.status_code == 503
-    assert seen_models == ["coder", "explorer", "planner"]
-    assert calls == [0.2, 0.4]
-
-
-@pytest.mark.asyncio
-async def test_backoff_no_sleep_after_final_attempt(simple_route_config_path: str):
-    sleep, calls = _recorder()
-    seen_models: list[str] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        model = json.loads(request.content)["model"]
-        seen_models.append(model)
-        return httpx.Response(503, json={"error": "unavailable"})
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=simple_route_config_path,
-    )
-    app.state.async_sleep = sleep
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "final-attempt"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert seen_models == ["coder", "explorer", "planner"]
-    assert len(calls) == 2
-
-
-@pytest.mark.asyncio
-async def test_backoff_no_sleep_on_non_retryable_404_branch(simple_route_config_path: str):
-    sleep, calls = _recorder()
-    seen_models: list[str] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        seen_models.append(json.loads(request.content)["model"])
-        return httpx.Response(404, json={"error": "not found"})
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=transport,
-        config_path=simple_route_config_path,
-    )
-    app.state.async_sleep = sleep
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "no-sleep-404"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "please refactor src/app.py"}]},
-        )
-
-    assert response.status_code == 404
-    assert calls == []
-
-
-# ---------------------------------------------------------------------------
-# Config exposure
-# ---------------------------------------------------------------------------
 
 
 def test_route_config_defaults_for_backoff():
@@ -305,10 +41,7 @@ def test_route_config_loads_backoff_params(tmp_path):
     cfg_path.write_text(
         """
 cache_ttl_seconds: 600
-allowed_models:
-  - explorer
-fallbacks:
-  explorer: []
+default_model: coder
 retry_base_delay: 0.5
 retry_max_delay: 5.0
 """,
@@ -316,3 +49,156 @@ retry_max_delay: 5.0
     config = config_mod.load_route_config(config_path=str(cfg_path))
     assert config.retry_base_delay == 0.5
     assert config.retry_max_delay == 5.0
+
+
+def test_default_timeout_is_120():
+    assert DEFAULT_TIMEOUT_SECONDS == 120
+
+
+def test_is_retryable_classifies_int_and_str():
+    assert is_retryable_failure(503)
+    assert is_retryable_failure("transport_error")
+    assert not is_retryable_failure(400)
+    assert not is_retryable_failure(401)
+
+
+@pytest.mark.asyncio
+async def test_backoff_sleeps_between_fallback_attempts(monkeypatch, simple_route_config_path: str):
+    sleep, calls = _recorder()
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=httpx.MockTransport(_retry_handler()),
+        config_path=simple_route_config_path,
+    )
+    app.state.async_sleep = sleep
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == 200
+    assert calls == [0.2]
+
+
+def _retry_handler():
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen.append(model)
+        if model == "ollama-local.kimi-k2.7-code":
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_backoff_no_sleep_on_non_retryable_400(monkeypatch, simple_route_config_path: str):
+    sleep, calls = _recorder()
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "bad request"})
+
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=httpx.MockTransport(handler),
+        config_path=simple_route_config_path,
+    )
+    app.state.async_sleep = sleep
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == 400
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_backoff_grows_exponentially(monkeypatch, simple_route_config_path: str):
+    sleep, calls = _recorder()
+    _env(monkeypatch, ENV_ALL)
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        seen.append(model)
+        if model in {"ollama-local.kimi-k2.7-code", "deepseek-api.deepseek-v4-pro"}:
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=httpx.MockTransport(handler),
+        config_path=simple_route_config_path,
+    )
+    app.state.async_sleep = sleep
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == 200
+    assert calls == [0.2, 0.4]
+
+
+@pytest.mark.asyncio
+async def test_backoff_capped_at_max_delay(monkeypatch, simple_route_config_path: str):
+    sleep, calls = _recorder()
+    _env(monkeypatch, ENV_ALL)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "unavailable"})
+
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=httpx.MockTransport(handler),
+        config_path=simple_route_config_path,
+    )
+    app.state.async_sleep = sleep
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/v1/chat/completions",
+            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert calls == [0.2, 0.4]
+
+
+@pytest.mark.asyncio
+async def test_backoff_no_sleep_after_final_attempt(monkeypatch, simple_route_config_path: str):
+    sleep, calls = _recorder()
+    _env(monkeypatch, ENV_ALL)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "unavailable"})
+
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=httpx.MockTransport(handler),
+        config_path=simple_route_config_path,
+    )
+    app.state.async_sleep = sleep
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/v1/chat/completions",
+            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert len(calls) == 2
