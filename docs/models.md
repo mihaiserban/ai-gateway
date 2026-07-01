@@ -210,7 +210,7 @@ vision
 
 ## OpenCode integration
 
-Run `python3 src/scripts/generate_opencode_config.py` to update the
+Run `python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply` to update the
 `provider.gateway.models` block in `~/.config/opencode/opencode.json` from the
 current gateway catalog. The generator preserves manually added per-model options
 while adding new aliases and refreshing generated display names. Use

@@ -81,9 +81,9 @@ Prefer task aliases when selecting a model: `explorer`, `planner`, `coder`, `cod
 For opencode, sync the gateway catalog into `~/.config/opencode/opencode.json`:
 
 ```bash
-python3 src/scripts/generate_opencode_config.py
+python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply
 ```
 
-Use `--dry-run` to preview the merged model list without writing the file.
+Use `--dry-run` to preview the rendered config without writing the file.
 
 Send `X-Session-Id` to keep a conversation on the same model within the Redis TTL.
