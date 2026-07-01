@@ -19,7 +19,7 @@ def test_render_litellm_config_emits_configured_deployment_ids():
 
     model_names = [entry["model_name"] for entry in render_litellm_config(config)["model_list"]]
 
-    assert "ollama-local.kimi-k2.7-code" in model_names
+    assert "ollama-cloud.kimi-k2.7-code" in model_names
     assert "deepseek-api.deepseek-v4-pro" in model_names
     assert "coder" not in model_names
 
@@ -36,7 +36,7 @@ def test_render_litellm_config_emits_additional_drop_params_for_opencode_go():
         assert entry["litellm_params"]["additional_drop_params"] == ["reasoningSummary"]
     # Providers without drop_params must not emit the key.
     ollama_entry = next(
-        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-local.kimi-k2.7-code"
+        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-cloud.kimi-k2.7-code"
     )
     assert "additional_drop_params" not in ollama_entry["litellm_params"]
 
@@ -64,7 +64,7 @@ def test_render_litellm_config_includes_ollama_api_base_env():
 
     litellm_config = render_litellm_config(config)
     ollama_entry = next(
-        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-local.kimi-k2.7-code"
+        entry for entry in litellm_config["model_list"] if entry["model_name"] == "ollama-cloud.kimi-k2.7-code"
     )
 
     assert ollama_entry["litellm_params"]["model"] == "ollama_chat/kimi-k2.7-code"
@@ -72,7 +72,7 @@ def test_render_litellm_config_includes_ollama_api_base_env():
     assert ollama_entry["litellm_params"]["api_key"] == "os.environ/OLLAMA_API_KEY"
     assert ollama_entry["model_info"] == {
         "provider": "ollama",
-        "connection": "ollama-local",
+        "connection": "ollama-cloud",
         "model": "kimi-k2.7-code",
     }
 
@@ -83,15 +83,15 @@ def test_render_router_config_uses_deployment_ids_and_combos():
     router_config = render_router_config(config)
 
     assert router_config["default_model"] == "coder"
-    assert router_config["combos"]["coder"]["candidates"][0] == "ollama-local.kimi-k2.7-code"
-    assert router_config["deployments"]["ollama-local.kimi-k2.7-code"]["provider"] == "ollama"
-    assert router_config["deployments"]["ollama-local.kimi-k2.7-code"]["connection"] == "ollama-local"
-    assert router_config["deployments"]["ollama-local.kimi-k2.7-code"]["model"] == "kimi-k2.7-code"
-    assert router_config["deployments"]["ollama-local.kimi-k2.7-code"]["required_env"] == [
+    assert router_config["combos"]["coder"]["candidates"][0] == "ollama-cloud.kimi-k2.7-code"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["provider"] == "ollama"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["connection"] == "ollama-cloud"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["model"] == "kimi-k2.7-code"
+    assert router_config["deployments"]["ollama-cloud.kimi-k2.7-code"]["required_env"] == [
         "OLLAMA_API_BASE",
         "OLLAMA_API_KEY",
     ]
-    assert "ollama-local.kimi-k2.7-code" in router_config["registry_models"]["kimi-k2.7-code"]
+    assert "ollama-cloud.kimi-k2.7-code" in router_config["registry_models"]["kimi-k2.7-code"]
 
 
 def test_render_router_config_includes_quota_cooldown_and_catalog_default_view():
@@ -130,7 +130,7 @@ def test_load_gateway_config_returns_gateway_catalog():
     from router.gateway_config import GatewayCatalog
 
     assert isinstance(config, GatewayCatalog)
-    assert "ollama-local.kimi-k2.7-code" in config.deployments
+    assert "ollama-cloud.kimi-k2.7-code" in config.deployments
 
 
 def test_generate_rejects_missing_file(tmp_path):

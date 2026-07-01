@@ -93,7 +93,7 @@ providers:
           context_length: 128000
 
 connections:
-  ollama-local:
+  ollama-cloud:
     provider: ollama
     enabled: true
     priority: 10
@@ -124,7 +124,7 @@ combos:
     task: explore
     strategy: score
     candidates:
-      - connection: ollama-local
+      - connection: ollama-cloud
         model: deepseek-v4-flash
       - connection: deepseek-api
         model: deepseek-v4-flash
@@ -142,7 +142,7 @@ combos:
     task: plan
     strategy: score
     candidates:
-      - connection: ollama-local
+      - connection: ollama-cloud
         model: glm-5.2
       - connection: opencode-go
         model: glm-5.2
@@ -162,7 +162,7 @@ combos:
     task: build
     strategy: score
     candidates:
-      - connection: ollama-local
+      - connection: ollama-cloud
         model: kimi-k2.7-code
       - connection: deepseek-api
         model: deepseek-v4-pro
@@ -180,7 +180,7 @@ combos:
     task: quick-build
     strategy: score
     candidates:
-      - connection: ollama-local
+      - connection: ollama-cloud
         model: deepseek-v4-flash
       - connection: deepseek-api
         model: deepseek-v4-flash
@@ -200,7 +200,7 @@ combos:
     task: vision
     strategy: score
     candidates:
-      - connection: ollama-local
+      - connection: ollama-cloud
         model: kimi-k2.6
       - connection: opencode-go
         model: kimi-k2.6

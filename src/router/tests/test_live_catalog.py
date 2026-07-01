@@ -15,7 +15,7 @@ def test_all_view_includes_combos_registry_and_connection_models(route_config):
     ids = [entry["id"] for entry in build_live_model_catalog(route_config, view="all", env=env)]
     assert "coder" in ids
     assert "kimi-k2.7-code" in ids
-    assert "ollama-local.kimi-k2.7-code" in ids
+    assert "ollama-cloud.kimi-k2.7-code" in ids
 
 
 def test_combo_view_only_includes_combos(route_config):
@@ -33,13 +33,13 @@ def test_registry_model_groups_active_deployments(route_config):
     }
     entry = next(e for e in build_live_model_catalog(route_config, env=env) if e["id"] == "kimi-k2.7-code")
     assert entry["gateway"]["kind"] == "registry-model"
-    assert "ollama-local.kimi-k2.7-code" in entry["gateway"]["deployments"]
+    assert "ollama-cloud.kimi-k2.7-code" in entry["gateway"]["deployments"]
 
 
 def test_missing_required_env_hides_deployment(route_config):
     entries = build_live_model_catalog(route_config, view="connections", env={})
     ids = [entry["id"] for entry in entries]
-    assert "ollama-local.kimi-k2.7-code" not in ids
+    assert "ollama-cloud.kimi-k2.7-code" not in ids
 
 
 def test_metadata_aggregation_is_deterministic(route_config):
@@ -51,7 +51,7 @@ def test_metadata_aggregation_is_deterministic(route_config):
     }
     entry = next(e for e in build_live_model_catalog(route_config, env=env) if e["id"] == "kimi-k2.7-code")
     assert entry["gateway"]["providers"] == ["ollama", "opencode-go"]
-    assert entry["gateway"]["connections"] == ["ollama-local", "opencode-go"]
+    assert entry["gateway"]["connections"] == ["ollama-cloud", "opencode-go"]
     assert entry["gateway"]["capabilities"] == ["chat", "coding"]
 
 
@@ -65,7 +65,7 @@ def test_all_catalog_order_is_stable(route_config):
     }
     ids = [entry["id"] for entry in build_live_model_catalog(route_config, env=env)]
     assert ids.index("coder") < ids.index("kimi-k2.7-code")
-    assert ids.index("kimi-k2.7-code") < ids.index("ollama-local.kimi-k2.7-code")
+    assert ids.index("kimi-k2.7-code") < ids.index("ollama-cloud.kimi-k2.7-code")
 
 
 def test_rejects_unknown_view(route_config):
@@ -76,7 +76,7 @@ def test_rejects_unknown_view(route_config):
 def test_deployment_is_active_returns_missing_env():
     deployment = DeploymentRuntime(
         provider="ollama",
-        connection="ollama-local",
+        connection="ollama-cloud",
         model="kimi-k2.7-code",
         required_env=("OLLAMA_API_BASE", "OLLAMA_API_KEY"),
     )
@@ -86,4 +86,4 @@ def test_deployment_is_active_returns_missing_env():
 
 def test_active_deployment_ids_filters_by_env(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
-    assert active_deployment_ids(route_config, env) == {"ollama-local.kimi-k2.7-code"}
+    assert active_deployment_ids(route_config, env) == {"ollama-cloud.kimi-k2.7-code"}

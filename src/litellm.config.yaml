@@ -1,50 +1,50 @@
 # Generated from src/gateway.config.yaml. Do not edit directly.
 
 model_list:
-- model_name: ollama-local.deepseek-v4-flash
+- model_name: ollama-cloud.deepseek-v4-flash
   litellm_params:
     model: ollama_chat/deepseek-v4-flash
     api_base: os.environ/OLLAMA_API_BASE
     api_key: os.environ/OLLAMA_API_KEY
   model_info:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: deepseek-v4-flash
-- model_name: ollama-local.glm-5.2
+- model_name: ollama-cloud.glm-5.2
   litellm_params:
     model: ollama_chat/glm-5.2
     api_base: os.environ/OLLAMA_API_BASE
     api_key: os.environ/OLLAMA_API_KEY
   model_info:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: glm-5.2
-- model_name: ollama-local.kimi-k2.7-code
+- model_name: ollama-cloud.kimi-k2.7-code
   litellm_params:
     model: ollama_chat/kimi-k2.7-code
     api_base: os.environ/OLLAMA_API_BASE
     api_key: os.environ/OLLAMA_API_KEY
   model_info:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.7-code
-- model_name: ollama-local.deepseek-v4-pro
+- model_name: ollama-cloud.deepseek-v4-pro
   litellm_params:
     model: ollama_chat/deepseek-v4-pro
     api_base: os.environ/OLLAMA_API_BASE
     api_key: os.environ/OLLAMA_API_KEY
   model_info:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: deepseek-v4-pro
-- model_name: ollama-local.kimi-k2.6
+- model_name: ollama-cloud.kimi-k2.6
   litellm_params:
     model: ollama_chat/kimi-k2.6
     api_base: os.environ/OLLAMA_API_BASE
     api_key: os.environ/OLLAMA_API_KEY
   model_info:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.6
 - model_name: deepseek-api.deepseek-v4-flash
   litellm_params:

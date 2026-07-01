@@ -39,13 +39,13 @@ async def test_live_payload_includes_catalog_counts():
         metrics=metrics,
         route_config=RouteConfig(
             default_model="coder",
-            combos={"coder": ComboRuntime(strategy="score", candidates=("ollama-local.kimi-k2.7-code",))},
+            combos={"coder": ComboRuntime(strategy="score", candidates=("ollama-cloud.kimi-k2.7-code",))},
             deployments={
-                "ollama-local.kimi-k2.7-code": DeploymentRuntime(
-                    provider="ollama", connection="ollama-local", model="kimi-k2.7-code"
+                "ollama-cloud.kimi-k2.7-code": DeploymentRuntime(
+                    provider="ollama", connection="ollama-cloud", model="kimi-k2.7-code"
                 )
             },
-            registry_models={"kimi-k2.7-code": ["ollama-local.kimi-k2.7-code"]},
+            registry_models={"kimi-k2.7-code": ["ollama-cloud.kimi-k2.7-code"]},
         ),
         redis_stats_collector=FakeRedisStatsCollector(),
     )

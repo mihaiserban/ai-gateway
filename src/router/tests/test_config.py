@@ -44,18 +44,18 @@ combos:
   coder:
     strategy: score
     candidates:
-      - ollama-local.kimi-k2.7-code
+      - ollama-cloud.kimi-k2.7-code
 deployments:
-  ollama-local.kimi-k2.7-code:
+  ollama-cloud.kimi-k2.7-code:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.7-code
     required_env:
       - OLLAMA_API_BASE
       - OLLAMA_API_KEY
 registry_models:
   kimi-k2.7-code:
-    - ollama-local.kimi-k2.7-code
+    - ollama-cloud.kimi-k2.7-code
 """,
     )
 
@@ -65,13 +65,13 @@ registry_models:
     assert config.cache_ttl_seconds == 300
     assert config.default_model == "coder"
     assert config.quota_cooldown_seconds == 60
-    assert config.combos["coder"].candidates == ("ollama-local.kimi-k2.7-code",)
-    assert config.deployments["ollama-local.kimi-k2.7-code"].provider == "ollama"
-    assert config.deployments["ollama-local.kimi-k2.7-code"].required_env == (
+    assert config.combos["coder"].candidates == ("ollama-cloud.kimi-k2.7-code",)
+    assert config.deployments["ollama-cloud.kimi-k2.7-code"].provider == "ollama"
+    assert config.deployments["ollama-cloud.kimi-k2.7-code"].required_env == (
         "OLLAMA_API_BASE",
         "OLLAMA_API_KEY",
     )
-    assert config.registry_models == {"kimi-k2.7-code": ["ollama-local.kimi-k2.7-code"]}
+    assert config.registry_models == {"kimi-k2.7-code": ["ollama-cloud.kimi-k2.7-code"]}
 
 
 def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
@@ -137,18 +137,18 @@ combos:
   coder:
     strategy: score
     candidates:
-      - ollama-local.kimi-k2.7-code
+      - ollama-cloud.kimi-k2.7-code
 deployments:
-  ollama-local.kimi-k2.7-code:
+  ollama-cloud.kimi-k2.7-code:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.7-code
     required_env:
       - OLLAMA_API_BASE
       - OLLAMA_API_KEY
 registry_models:
   kimi-k2.7-code:
-    - ollama-local.kimi-k2.7-code
+    - ollama-cloud.kimi-k2.7-code
 """,
     )
 
@@ -158,7 +158,7 @@ def test_cross_check_ok_when_deployments_in_litellm(tmp_path):
     config = config_mod.load_route_config(config_path=str(cfg_path))
     litellm_path = _write_litellm(
         tmp_path / "litellm.config.yaml",
-        ["ollama-local.kimi-k2.7-code"],
+        ["ollama-cloud.kimi-k2.7-code"],
     )
 
     config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))
@@ -175,7 +175,7 @@ def test_cross_check_fails_when_deployment_missing_from_litellm(tmp_path):
     with pytest.raises(config_mod.ConfigValidationError) as exc:
         config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))
 
-    assert "ollama-local.kimi-k2.7-code" in str(exc.value)
+    assert "ollama-cloud.kimi-k2.7-code" in str(exc.value)
 
 
 def test_cross_check_warns_but_does_not_crash_when_litellm_missing(tmp_path, caplog):

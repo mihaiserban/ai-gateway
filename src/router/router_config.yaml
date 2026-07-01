@@ -12,7 +12,7 @@ combos:
   explorer:
     strategy: score
     candidates:
-    - ollama-local.deepseek-v4-flash
+    - ollama-cloud.deepseek-v4-flash
     - deepseek-api.deepseek-v4-flash
     - opencode-go.deepseek-v4-flash
     task: explore
@@ -26,7 +26,7 @@ combos:
   planner:
     strategy: score
     candidates:
-    - ollama-local.glm-5.2
+    - ollama-cloud.glm-5.2
     - opencode-go.glm-5.2
     - deepseek-api.deepseek-v4-pro
     - opencode-go.kimi-k2.7-code
@@ -41,7 +41,7 @@ combos:
   coder:
     strategy: score
     candidates:
-    - ollama-local.kimi-k2.7-code
+    - ollama-cloud.kimi-k2.7-code
     - deepseek-api.deepseek-v4-pro
     - opencode-go.kimi-k2.7-code
     task: build
@@ -55,7 +55,7 @@ combos:
   coder-fast:
     strategy: score
     candidates:
-    - ollama-local.deepseek-v4-flash
+    - ollama-cloud.deepseek-v4-flash
     - deepseek-api.deepseek-v4-flash
     - opencode-go.deepseek-v4-flash
     - opencode-go.kimi-k2.6
@@ -70,7 +70,7 @@ combos:
   vision:
     strategy: score
     candidates:
-    - ollama-local.kimi-k2.6
+    - ollama-cloud.kimi-k2.6
     - opencode-go.kimi-k2.6
     task: vision
     scoring:
@@ -81,9 +81,9 @@ combos:
       connection_density: 0.1
       priority: 0.1
 deployments:
-  ollama-local.deepseek-v4-flash:
+  ollama-cloud.deepseek-v4-flash:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: deepseek-v4-flash
     required_env:
     - OLLAMA_API_BASE
@@ -97,9 +97,9 @@ deployments:
     priority: 10
     stability: 0.85
     max_concurrent: 8
-  ollama-local.glm-5.2:
+  ollama-cloud.glm-5.2:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: glm-5.2
     required_env:
     - OLLAMA_API_BASE
@@ -113,9 +113,9 @@ deployments:
     priority: 10
     stability: 0.85
     max_concurrent: 8
-  ollama-local.kimi-k2.7-code:
+  ollama-cloud.kimi-k2.7-code:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.7-code
     required_env:
     - OLLAMA_API_BASE
@@ -128,9 +128,9 @@ deployments:
     priority: 10
     stability: 0.85
     max_concurrent: 8
-  ollama-local.deepseek-v4-pro:
+  ollama-cloud.deepseek-v4-pro:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: deepseek-v4-pro
     required_env:
     - OLLAMA_API_BASE
@@ -144,9 +144,9 @@ deployments:
     priority: 10
     stability: 0.85
     max_concurrent: 8
-  ollama-local.kimi-k2.6:
+  ollama-cloud.kimi-k2.6:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.6
     required_env:
     - OLLAMA_API_BASE
@@ -259,18 +259,18 @@ deployments:
     max_concurrent: 8
 registry_models:
   deepseek-v4-flash:
-  - ollama-local.deepseek-v4-flash
+  - ollama-cloud.deepseek-v4-flash
   - deepseek-api.deepseek-v4-flash
   - opencode-go.deepseek-v4-flash
   glm-5.2:
-  - ollama-local.glm-5.2
+  - ollama-cloud.glm-5.2
   - opencode-go.glm-5.2
   kimi-k2.7-code:
-  - ollama-local.kimi-k2.7-code
+  - ollama-cloud.kimi-k2.7-code
   - opencode-go.kimi-k2.7-code
   deepseek-v4-pro:
-  - ollama-local.deepseek-v4-pro
+  - ollama-cloud.deepseek-v4-pro
   - deepseek-api.deepseek-v4-pro
   kimi-k2.6:
-  - ollama-local.kimi-k2.6
+  - ollama-cloud.kimi-k2.6
   - opencode-go.kimi-k2.6

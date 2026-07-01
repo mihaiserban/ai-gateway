@@ -25,15 +25,15 @@ def test_registry_model_resolves_to_all_active_deployments(simple_route_config_p
     }
     resolved = resolve_model_request("kimi-k2.7-code", config, GatewayRoutingState(), now=1000.0, env=env)
     assert resolved.kind == "registry-model"
-    assert "ollama-local.kimi-k2.7-code" in resolved.ordered_deployments
+    assert "ollama-cloud.kimi-k2.7-code" in resolved.ordered_deployments
 
 
 def test_connection_model_forces_one_deployment(simple_route_config_path: str):
     config = _config(simple_route_config_path)
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
-    resolved = resolve_model_request("ollama-local.kimi-k2.7-code", config, GatewayRoutingState(), now=1000.0, env=env)
+    resolved = resolve_model_request("ollama-cloud.kimi-k2.7-code", config, GatewayRoutingState(), now=1000.0, env=env)
     assert resolved.kind == "connection-model"
-    assert resolved.ordered_deployments == ["ollama-local.kimi-k2.7-code"]
+    assert resolved.ordered_deployments == ["ollama-cloud.kimi-k2.7-code"]
 
 
 def test_inactive_deployments_are_not_routing_candidates(simple_route_config_path: str):

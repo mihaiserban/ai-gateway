@@ -6,7 +6,7 @@ The `/v1/models` endpoint exposes three kinds of entries:
 * `registry-model` - a registry model id (e.g. ``kimi-k2.7-code``) expanded from
                      every active deployment that serves it, with aggregated
                      metadata (providers, connections, capabilities, ...).
-* `connection-model` - a single deployment id (e.g. ``ollama-local.kimi-k2.7-code``)
+* `connection-model` - a single deployment id (e.g. ``ollama-cloud.kimi-k2.7-code``)
                       exposed under its own id.
 
 Deployments whose ``required_env`` variables are missing from the runtime

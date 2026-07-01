@@ -10,13 +10,13 @@ combos:
     strategy: score
     task: build
     candidates:
-      - ollama-local.kimi-k2.7-code
+      - ollama-cloud.kimi-k2.7-code
       - deepseek-api.deepseek-v4-pro
       - opencode-go.kimi-k2.7-code
 deployments:
-  ollama-local.kimi-k2.7-code:
+  ollama-cloud.kimi-k2.7-code:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.7-code
     required_env:
       - OLLAMA_API_BASE
@@ -49,7 +49,7 @@ deployments:
     context_length: 128000
 registry_models:
   kimi-k2.7-code:
-    - ollama-local.kimi-k2.7-code
+    - ollama-cloud.kimi-k2.7-code
     - opencode-go.kimi-k2.7-code
   deepseek-v4-pro:
     - deepseek-api.deepseek-v4-pro

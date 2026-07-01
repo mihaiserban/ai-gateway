@@ -31,9 +31,11 @@ Redis     -> LiteLLM cache state and router session stickiness
 Postgres  -> LiteLLM virtual keys, budgets, spend, and UI state
 ```
 
-Only the router publishes a host port by default, and it is bound to
-`127.0.0.1:4100` so it is local to the Docker host. LiteLLM, Postgres, and
-Redis stay internal to Docker.
+Only the router publishes a host port by default. The compose file maps
+`4100:4100` on the Docker host; keep that host behind Tailscale, a VPN, or a
+private LAN firewall. LiteLLM, Postgres, and Redis stay internal to Docker.
+For localhost-only development, change the router port mapping to
+`127.0.0.1:4100:4100`.
 
 ## Repository Layout
 
@@ -107,7 +109,7 @@ Successful chat responses include gateway routing headers:
 | --- | --- |
 | `X-Gateway-Requested-Model` | The model id the caller requested. |
 | `X-Gateway-Model-Kind` | `combo`, `registry-model`, or `connection-model`. |
-| `X-Gateway-Served-Deployment` | The deployment id that served the response (e.g. `ollama-local.kimi-k2.7-code`). |
+| `X-Gateway-Served-Deployment` | The deployment id that served the response (e.g. `ollama-cloud.kimi-k2.7-code`). |
 | `X-Gateway-Fallback-Count` | Number of fallback hops (0 when no fallback). |
 | `X-Gateway-Attempted-Models` | Comma-separated deployment ids tried, in order. |
 | `X-Gateway-Fallback-From` | First attempted deployment id, present only after a fallback. |
@@ -171,7 +173,7 @@ question about where a model id comes from and how it is routed.
 | **Connection** | One configured local endpoint, account, or key for a provider. Has priority, stability, and concurrency knobs and selects which registry models it serves. |
 | **Combo** | Curated public model with fallback/scoring. A stable id (`explorer`, `planner`, `coder`, ...) that maps to ordered `(connection, model)` candidates and a scoring policy. |
 | **Registry model** | A provider model id served by active connections. Examples: `kimi-k2.7-code`, `deepseek-v4-pro`, `glm-5.2`. The router resolves it to the best active deployment at request time. |
-| **Connection model** | Explicit qualified deployment id in the form `<connection>.<model>`, e.g. `ollama-local.kimi-k2.7-code`. Forces one connection with no combo/registry fallback. |
+| **Connection model** | Explicit qualified deployment id in the form `<connection>.<model>`, e.g. `ollama-cloud.kimi-k2.7-code`. Forces one connection with no combo/registry fallback. |
 | **Client** | Local harness setup target (`codex`, `claude-code`, `opencode`, `pi`). Used by the `gateway setup` CLI to render harness config from the live catalog. |
 
 Combos and registry models share the `/v1/models` namespace. See
@@ -201,9 +203,9 @@ Routing is deterministic and config-driven:
    fall back.
 
 LiteLLM is an execution adapter: the router rewrites catalog ids to the
-internal deployment id (e.g. `ollama-local.kimi-k2.7-code`) before calling
+internal deployment id (e.g. `ollama-cloud.kimi-k2.7-code`) before calling
 LiteLLM. Because of this, LiteLLM virtual keys must allow the internal
-deployment ids they may use, such as `ollama-local.kimi-k2.7-code` and
+deployment ids they may use, such as `ollama-cloud.kimi-k2.7-code` and
 `deepseek-api.deepseek-v4-pro`. When a combo or registry model falls back,
 the served deployment may be any of its candidates, so include every allowed
 deployment id in the virtual key allowlist. Use
@@ -233,7 +235,7 @@ Important environment values:
 | `REDIS_PASSWORD`, `REDIS_URL` | Redis auth and connection string for LiteLLM cache and router sessions. |
 | `DEEPSEEK_API_KEY` | Provider key for `deepseek-api.*` deployments. |
 | `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for `opencode-go.*` deployments. |
-| `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama local or cloud settings for `ollama-local.*` deployments. |
+| `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama Cloud settings for `ollama-cloud.*` deployments. |
 | `VIRTUAL_KEY` | Default LiteLLM virtual key written into client configs by `gateway setup`. |
 
 Edit providers, connections, combos, router, and LiteLLM values in
@@ -259,6 +261,7 @@ consistency.
 
 ```bash
 # Validate providers, connections, combos, and env vars
+set -a; . src/.env; set +a   # or export the same values in your shell
 python3 src/scripts/gateway.py doctor
 
 # Regenerate runtime configs from gateway.config.yaml
@@ -278,6 +281,11 @@ python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all 
 # Query the live catalog over HTTP
 curl "http://localhost:4100/v1/models?view=all" -H "Authorization: Bearer $VIRTUAL_KEY"
 ```
+
+`gateway.py doctor` checks the current shell environment. If you have only
+created `src/.env`, export it first as shown above. The command verifies that
+required variables are present; the chat smoke tests below still require real,
+non-empty provider keys or a reachable Ollama endpoint.
 
 If you use OpenCode with this gateway, configure it with the gateway CLI. The
 default `local-plugin` mode installs a first-party plugin that fetches the live
@@ -331,7 +339,7 @@ docker compose exec litellm python3 -c "
 import os, json, urllib.request
 body = json.dumps({
     'key_alias': 'codex-cli',
-    'models': ['ollama-local.kimi-k2.7-code', 'deepseek-api.deepseek-v4-pro', 'opencode-go.kimi-k2.7-code'],
+    'models': ['ollama-cloud.kimi-k2.7-code', 'deepseek-api.deepseek-v4-pro', 'opencode-go.kimi-k2.7-code'],
     'max_budget': 5.0
 }).encode()
 req = urllib.request.Request(
@@ -351,7 +359,7 @@ Use the returned key as the agent API key.
 
 Because the router rewrites catalog ids to deployment ids before calling
 LiteLLM, LiteLLM virtual keys must allow the internal deployment ids they may
-use, such as `ollama-local.kimi-k2.7-code` and
+use, such as `ollama-cloud.kimi-k2.7-code` and
 `deepseek-api.deepseek-v4-pro`. When a combo or registry model falls back, the
 served deployment may be any of its candidates, so the virtual key allowlist
 must include every deployment id the agent is allowed to use. Use
@@ -372,6 +380,12 @@ model provider configuration. Codex Pro is a client entitlement, not an
 upstream provider behind this gateway.
 
 ## Request Examples
+
+These examples require a LiteLLM virtual key in `VIRTUAL_KEY`. Create one with
+the command in [Create And Use Virtual Keys](#create-and-use-virtual-keys), or
+export an existing key before running the curls. Chat requests also require at
+least one candidate provider for the requested model to be reachable and
+authenticated.
 
 List models (live catalog, all views):
 
@@ -415,7 +429,7 @@ curl http://localhost:4100/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-Session-Id: connection-model-test" \
   -d '{
-    "model": "ollama-local.kimi-k2.7-code",
+    "model": "ollama-cloud.kimi-k2.7-code",
     "messages": [{"role": "user", "content": "explain this design tradeoff"}],
     "max_tokens": 200
   }'
@@ -564,7 +578,7 @@ An agent receives `403`:
 - Check whether the LiteLLM virtual key allowlist includes the deployment id
   the router tried. The router rewrites catalog ids to deployment ids before
   calling LiteLLM, so the allowlist must include deployment ids such as
-  `ollama-local.kimi-k2.7-code`, not just the combo or registry model id.
+  `ollama-cloud.kimi-k2.7-code`, not just the combo or registry model id.
 - Run `python3 src/scripts/gateway.py explain <model>` to list the candidate
   deployments, then update the virtual key allowlist.
 - Try `/v1/models?view=all` with the same virtual key.

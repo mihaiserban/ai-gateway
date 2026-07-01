@@ -37,8 +37,8 @@ async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_header
     assert seen["url"] == "http://litellm:4000/v1/chat/completions"
     assert seen["authorization"] == "Bearer virtual-key"
     assert seen["content_type"] == "application/json"
-    assert seen["body"]["model"] == "ollama-local.kimi-k2.7-code"
-    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-local.kimi-k2.7-code"
+    assert seen["body"]["model"] == "ollama-cloud.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio
@@ -72,7 +72,7 @@ async def test_models_compat_returns_live_gateway_catalog(
     ids = [item["id"] for item in body["data"]]
     assert "coder" in ids
     assert "kimi-k2.7-code" in ids
-    assert "ollama-local.kimi-k2.7-code" in ids
+    assert "ollama-cloud.kimi-k2.7-code" in ids
 
 
 @pytest.mark.asyncio

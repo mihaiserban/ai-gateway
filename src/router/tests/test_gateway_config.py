@@ -38,7 +38,7 @@ def minimal_config() -> dict:
             },
         },
         "connections": {
-            "ollama-local": {
+            "ollama-cloud": {
                 "provider": "ollama",
                 "enabled": True,
                 "priority": 10,
@@ -56,7 +56,7 @@ def minimal_config() -> dict:
             "coder": {
                 "strategy": "score",
                 "candidates": [
-                    {"connection": "ollama-local", "model": "kimi-k2.7-code"},
+                    {"connection": "ollama-cloud", "model": "kimi-k2.7-code"},
                     {"connection": "deepseek-api", "model": "deepseek-v4-pro"},
                 ],
             }
@@ -68,10 +68,10 @@ def test_expands_active_connections_into_deployments():
     catalog = expand_gateway_config(minimal_config())
     assert sorted(catalog.deployments) == [
         "deepseek-api.deepseek-v4-pro",
-        "ollama-local.kimi-k2.7-code",
+        "ollama-cloud.kimi-k2.7-code",
     ]
-    assert catalog.deployments["ollama-local.kimi-k2.7-code"].litellm_model == ("ollama_chat/kimi-k2.7-code")
-    assert catalog.deployments["ollama-local.kimi-k2.7-code"].capabilities == (
+    assert catalog.deployments["ollama-cloud.kimi-k2.7-code"].litellm_model == ("ollama_chat/kimi-k2.7-code")
+    assert catalog.deployments["ollama-cloud.kimi-k2.7-code"].capabilities == (
         "chat",
         "coding",
     )
@@ -79,9 +79,9 @@ def test_expands_active_connections_into_deployments():
 
 def test_disabled_connections_do_not_create_deployments():
     config = minimal_config()
-    config["connections"]["ollama-local"]["enabled"] = False
+    config["connections"]["ollama-cloud"]["enabled"] = False
     catalog = expand_gateway_config(config)
-    assert "ollama-local.kimi-k2.7-code" not in catalog.deployments
+    assert "ollama-cloud.kimi-k2.7-code" not in catalog.deployments
 
 
 def test_rejects_combo_candidate_for_missing_connection():
@@ -100,7 +100,7 @@ def test_rejects_combo_registry_model_id_collision():
 
 def test_rejects_dot_in_connection_id():
     config = minimal_config()
-    config["connections"]["ollama.local"] = config["connections"].pop("ollama-local")
+    config["connections"]["ollama.local"] = config["connections"].pop("ollama-cloud")
     config["combos"]["coder"]["candidates"][0]["connection"] = "ollama.local"
     with pytest.raises(GatewayConfigError, match="connection id"):
         expand_gateway_config(config)
@@ -111,7 +111,7 @@ def test_model_id_is_exact_and_not_lowercased():
     config["providers"]["ollama"]["registry"]["models"] = {
         "Model.With.Case": {"display_name": "Case Model", "capabilities": ["chat"]}
     }
-    config["connections"]["ollama-local"]["models"] = ["Model.With.Case"]
+    config["connections"]["ollama-cloud"]["models"] = ["Model.With.Case"]
     config["combos"]["coder"]["candidates"][0]["model"] = "Model.With.Case"
     catalog = expand_gateway_config(config)
-    assert "ollama-local.Model.With.Case" in catalog.deployments
+    assert "ollama-cloud.Model.With.Case" in catalog.deployments

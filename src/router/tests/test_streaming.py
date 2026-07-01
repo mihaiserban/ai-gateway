@@ -45,7 +45,7 @@ async def test_chat_stream_passthrough_forwards_chunks(monkeypatch, simple_route
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/event-stream"
-    assert seen["json"]["model"] == "ollama-local.kimi-k2.7-code"
+    assert seen["json"]["model"] == "ollama-cloud.kimi-k2.7-code"
     assert seen["json"]["stream_options"] == {"include_usage": True}
     assert response.content == SSE_BODY
 
@@ -65,7 +65,7 @@ async def test_chat_stream_sets_gateway_headers(monkeypatch, simple_route_config
 
     assert response.status_code == 200
     assert response.headers["X-Gateway-Model-Kind"] == "registry-model"
-    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-local.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"
     assert response.headers["X-Gateway-Fallback-Count"] == "0"
 
 
@@ -88,7 +88,7 @@ async def test_chat_stream_writes_session_after_200(monkeypatch, simple_route_co
     key = hashlib.sha256(hashlib.sha256(b"Bearer test").hexdigest().encode() + b":stream-session").hexdigest()
     session = await app.state.session_store.get(key)
     assert session is not None
-    assert session["served_deployment"] == "ollama-local.kimi-k2.7-code"
+    assert session["served_deployment"] == "ollama-cloud.kimi-k2.7-code"
     assert session["model_kind"] == "registry-model"
 
 
@@ -99,7 +99,7 @@ async def test_chat_stream_fallback_before_stream_starts(monkeypatch, simple_rou
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
         seen_models.append(model)
-        if model == "ollama-local.kimi-k2.7-code":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, content=SSE_BODY, headers={"content-type": "text/event-stream"})
 
@@ -113,7 +113,7 @@ async def test_chat_stream_fallback_before_stream_starts(monkeypatch, simple_rou
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/event-stream"
-    assert seen_models == ["ollama-local.kimi-k2.7-code", "opencode-go.kimi-k2.7-code"]
+    assert seen_models == ["ollama-cloud.kimi-k2.7-code", "opencode-go.kimi-k2.7-code"]
     assert response.headers["X-Gateway-Served-Deployment"] == "opencode-go.kimi-k2.7-code"
     assert response.headers["X-Gateway-Fallback-Count"] == "1"
     assert response.content == SSE_BODY
@@ -158,7 +158,7 @@ async def test_chat_stream_extracts_usage_from_sse(monkeypatch, simple_route_con
     assert event.completion_tokens == 5
     assert event.total_tokens == 15
     assert event.stream is True
-    assert event.served_model == "ollama-local.kimi-k2.7-code"
+    assert event.served_model == "ollama-cloud.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio

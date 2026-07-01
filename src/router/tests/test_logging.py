@@ -45,7 +45,7 @@ async def test_chat_logs_request_metadata(caplog, monkeypatch, simple_route_conf
     assert len(lines) == 1
     line = lines[0]
     assert "session_id_hash=" in line
-    assert "model=ollama-local.kimi-k2.7-code" in line
+    assert "model=ollama-cloud.kimi-k2.7-code" in line
     assert "requested_model=kimi-k2.7-code" in line
     assert "reason=registry-model" in line
     assert "status=200" in line
@@ -58,7 +58,7 @@ async def test_chat_logs_request_metadata(caplog, monkeypatch, simple_route_conf
 async def test_chat_logs_fallback_from_when_fallback_occurred(caplog, monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "ollama-local.kimi-k2.7-code":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
@@ -83,7 +83,7 @@ async def test_chat_logs_fallback_from_when_fallback_occurred(caplog, monkeypatc
     assert len(lines) == 1
     line = lines[0]
     assert "fallback_count=1" in line
-    assert "fallback_from=ollama-local.kimi-k2.7-code" in line
+    assert "fallback_from=ollama-cloud.kimi-k2.7-code" in line
     assert "model=opencode-go.kimi-k2.7-code" in line
 
 
@@ -231,7 +231,7 @@ async def test_chat_stream_logs_request_metadata(caplog, monkeypatch, simple_rou
     lines = _log_lines(caplog)
     assert len(lines) == 1
     line = lines[0]
-    assert "model=ollama-local.kimi-k2.7-code" in line
+    assert "model=ollama-cloud.kimi-k2.7-code" in line
     assert "status=200" in line
     assert "latency_ms=" in line
     assert "fallback_count=0" in line

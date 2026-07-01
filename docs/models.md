@@ -21,7 +21,7 @@ question about where a model id comes from and how it is routed.
 | **Connection** | One configured local endpoint, account, or key for a provider. Has priority, stability, and concurrency knobs and selects which registry models it serves. |
 | **Combo** | Curated public model with fallback/scoring. A stable id (`explorer`, `planner`, `coder`, ...) that maps to ordered `(connection, model)` candidates and a scoring policy. Shares the `/v1/models` namespace with registry model ids. |
 | **Registry model** | A provider model id served by active connections. Examples: `kimi-k2.7-code`, `deepseek-v4-pro`, `glm-5.2`. The router resolves it to the best active deployment at request time. |
-| **Connection model** | Explicit qualified deployment id in the form `<connection>.<model>`, e.g. `ollama-local.kimi-k2.7-code`. Forces one connection with no combo/registry fallback. |
+| **Connection model** | Explicit qualified deployment id in the form `<connection>.<model>`, e.g. `ollama-cloud.kimi-k2.7-code`. Forces one connection with no combo/registry fallback. |
 | **Client** | Local harness setup target (`codex`, `claude-code`, `opencode`, `pi`). Used by the `gateway setup` CLI to render harness config from the live catalog. |
 
 ### How a requested model is resolved
@@ -40,7 +40,7 @@ question about where a model id comes from and how it is routed.
    budget, virtual-key model allowlist, and malformed-request errors do not
    fall back.
 3. LiteLLM is an execution adapter: the router rewrites catalog ids to the
-   internal deployment id (e.g. `ollama-local.kimi-k2.7-code`) before calling
+   internal deployment id (e.g. `ollama-cloud.kimi-k2.7-code`) before calling
    LiteLLM.
 
 `model_info.reasoning_level` is catalog metadata with values `none`, `low`,
@@ -69,7 +69,7 @@ Successful chat responses include gateway routing headers:
 | --- | --- |
 | `X-Gateway-Requested-Model` | The model id the caller requested. |
 | `X-Gateway-Model-Kind` | `combo`, `registry-model`, or `connection-model`. |
-| `X-Gateway-Served-Deployment` | The deployment id that actually served the response (e.g. `ollama-local.kimi-k2.7-code`). |
+| `X-Gateway-Served-Deployment` | The deployment id that actually served the response (e.g. `ollama-cloud.kimi-k2.7-code`). |
 | `X-Gateway-Fallback-Count` | Number of fallback hops (0 when no fallback). |
 | `X-Gateway-Attempted-Models` | Comma-separated deployment ids tried, in order. Empty when no fallback. |
 | `X-Gateway-Fallback-From` | First attempted deployment id, present only after a fallback. |
@@ -85,7 +85,7 @@ params, and a `registry.models` map of the model ids it can serve.
 
 | Provider | LiteLLM prefix | API base env | API key env | Notes |
 | --- | --- | --- | --- | --- |
-| `ollama` | `ollama_chat/*` | `OLLAMA_API_BASE` | `OLLAMA_API_KEY` | Zero-cost local/cloud; primary path for most models. |
+| `ollama` | `ollama_chat/*` | `OLLAMA_API_BASE` | `OLLAMA_API_KEY` | Ollama Cloud; primary path for most models. |
 | `deepseek` | `deepseek/*` | n/a | `DEEPSEEK_API_KEY` | Paid API fallback. |
 | `opencode-go` | `openai/*` | `OPENCODE_GO_API_BASE` | `OPENCODE_GO_API_KEY` | OpenAI-compatible adapter; drops `reasoningSummary`. |
 
@@ -101,7 +101,7 @@ registry models it serves.
 
 | Connection | Provider | Priority | Stability | Max concurrent | Models |
 | --- | --- | --- | --- | --- | --- |
-| `ollama-local` | `ollama` | 10 | 0.85 | 8 | all |
+| `ollama-cloud` | `ollama` | 10 | 0.85 | 8 | all |
 | `deepseek-api` | `deepseek` | 30 | 0.90 | 20 | `deepseek-v4-flash`, `deepseek-v4-pro` |
 | `opencode-go` | `opencode-go` | 40 | 0.70 | 8 | all |
 
@@ -118,11 +118,11 @@ ids.
 
 | Combo | Task | Candidates (connection.model) |
 | --- | --- | --- |
-| `explorer` | explore | `ollama-local.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash`, `opencode-go.deepseek-v4-flash` |
-| `planner` | plan | `ollama-local.glm-5.2`, `opencode-go.glm-5.2`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` |
-| `coder` | build | `ollama-local.kimi-k2.7-code`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` |
-| `coder-fast` | quick-build | `ollama-local.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash`, `opencode-go.deepseek-v4-flash`, `opencode-go.kimi-k2.6` |
-| `vision` | vision | `ollama-local.kimi-k2.6`, `opencode-go.kimi-k2.6` |
+| `explorer` | explore | `ollama-cloud.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash`, `opencode-go.deepseek-v4-flash` |
+| `planner` | plan | `ollama-cloud.glm-5.2`, `opencode-go.glm-5.2`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` |
+| `coder` | build | `ollama-cloud.kimi-k2.7-code`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` |
+| `coder-fast` | quick-build | `ollama-cloud.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash`, `opencode-go.deepseek-v4-flash`, `opencode-go.kimi-k2.6` |
+| `vision` | vision | `ollama-cloud.kimi-k2.6`, `opencode-go.kimi-k2.6` |
 
 All combos use the same scoring weights:
 
@@ -192,7 +192,7 @@ curl "http://localhost:4100/v1/models?view=all" -H "Authorization: Bearer $VIRTU
 
 Because the router rewrites catalog ids to deployment ids before calling
 LiteLLM, LiteLLM virtual keys must allow the internal deployment ids they may
-use, such as `ollama-local.kimi-k2.7-code` and
+use, such as `ollama-cloud.kimi-k2.7-code` and
 `deepseek-api.deepseek-v4-pro`.
 
 When a combo or registry model falls back, the served deployment may be any of
@@ -312,8 +312,8 @@ need it.
 
 | Variable | Required by | Purpose |
 | --- | --- | --- |
-| `OLLAMA_API_BASE` | All `ollama-local.*` deployments | Ollama endpoint URL |
-| `OLLAMA_API_KEY` | All `ollama-local.*` deployments | Ollama API key (may be empty for local) |
+| `OLLAMA_API_BASE` | All `ollama-cloud.*` deployments | Ollama endpoint URL |
+| `OLLAMA_API_KEY` | All `ollama-cloud.*` deployments | Ollama Cloud API key |
 | `DEEPSEEK_API_KEY` | `deepseek-api.*` deployments | DeepSeek API key |
 | `OPENCODE_GO_API_BASE` | All `opencode-go.*` deployments | OpenCode Go base URL |
 | `OPENCODE_GO_API_KEY` | All `opencode-go.*` deployments | OpenCode Go API key |

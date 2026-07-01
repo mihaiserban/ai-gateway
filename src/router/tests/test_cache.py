@@ -28,18 +28,18 @@ combos:
   coder:
     strategy: score
     candidates:
-      - ollama-local.kimi-k2.7-code
+      - ollama-cloud.kimi-k2.7-code
 deployments:
-  ollama-local.kimi-k2.7-code:
+  ollama-cloud.kimi-k2.7-code:
     provider: ollama
-    connection: ollama-local
+    connection: ollama-cloud
     model: kimi-k2.7-code
     required_env:
       - OLLAMA_API_BASE
       - OLLAMA_API_KEY
 registry_models:
   kimi-k2.7-code:
-    - ollama-local.kimi-k2.7-code
+    - ollama-cloud.kimi-k2.7-code
 """,
     )
     return cfg

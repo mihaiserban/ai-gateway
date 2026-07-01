@@ -49,7 +49,7 @@ async def test_metrics_counts_requests_and_models(monkeypatch, simple_route_conf
 async def test_metrics_counts_fallbacks(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "ollama-local.kimi-k2.7-code":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
@@ -141,7 +141,7 @@ async def test_metrics_counts_cache_key_without_hit_header_as_miss(monkeypatch, 
 async def test_metrics_tracks_availability_for_each_upstream_attempt(monkeypatch, simple_route_config_path: str):
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
-        if model == "ollama-local.kimi-k2.7-code":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
@@ -161,9 +161,9 @@ async def test_metrics_tracks_availability_for_each_upstream_attempt(monkeypatch
         )
 
     provider_availability = app.state.metrics.snapshot()["provider_availability"]
-    assert provider_availability["ollama-local.kimi-k2.7-code"]["attempts"] == 1
-    assert provider_availability["ollama-local.kimi-k2.7-code"]["failures"] == 1
-    assert provider_availability["ollama-local.kimi-k2.7-code"]["retryable_failures"] == 1
+    assert provider_availability["ollama-cloud.kimi-k2.7-code"]["attempts"] == 1
+    assert provider_availability["ollama-cloud.kimi-k2.7-code"]["failures"] == 1
+    assert provider_availability["ollama-cloud.kimi-k2.7-code"]["retryable_failures"] == 1
     assert provider_availability["opencode-go.kimi-k2.7-code"]["attempts"] == 1
     assert provider_availability["opencode-go.kimi-k2.7-code"]["successes"] == 1
 

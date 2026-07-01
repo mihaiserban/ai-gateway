@@ -93,7 +93,7 @@ async def test_models_returns_live_catalog_combos_registry_and_connections(
     ids = [item["id"] for item in response.json()["data"]]
     assert "coder" in ids
     assert "kimi-k2.7-code" in ids
-    assert "ollama-local.kimi-k2.7-code" in ids
+    assert "ollama-cloud.kimi-k2.7-code" in ids
 
 
 @pytest.mark.asyncio
@@ -134,7 +134,7 @@ async def test_chat_retries_ordered_deployments_only_for_retryable_failures(
         )
 
     assert response.status_code == 200
-    assert upstream.body(0)["model"] == "ollama-local.kimi-k2.7-code"
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
     assert upstream.body(1)["model"] == "opencode-go.kimi-k2.7-code"
 
 
@@ -169,7 +169,7 @@ async def test_virtual_key_is_forwarded_with_rewritten_deployment_model(
 
     assert response.status_code == 200
     assert upstream.requests[0].headers["authorization"] == "Bearer sk-virtual"
-    assert upstream.body(0)["model"] == "ollama-local.kimi-k2.7-code"
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio
@@ -202,14 +202,14 @@ async def test_no_x_session_id_does_not_pin_previous_deployment(monkeypatch, sim
             "/v1/chat/completions",
             json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "a"}]},
         )
-        app.state.routing_state.record_latency("ollama-local.kimi-k2.7-code", 900)
+        app.state.routing_state.record_latency("ollama-cloud.kimi-k2.7-code", 900)
         app.state.routing_state.record_latency("opencode-go.kimi-k2.7-code", 100)
         await client.post(
             "/v1/chat/completions",
             json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "b"}]},
         )
 
-    assert upstream.body(0)["model"] == "ollama-local.kimi-k2.7-code"
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
     assert upstream.body(1)["model"] == "opencode-go.kimi-k2.7-code"
 
 
@@ -225,7 +225,7 @@ async def test_warm_session_is_scoped_by_auth_fingerprint(monkeypatch, simple_ro
             headers={"Authorization": "Bearer key-a", "X-Session-Id": "same"},
             json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "a"}]},
         )
-        app.state.routing_state.record_latency("ollama-local.kimi-k2.7-code", 900)
+        app.state.routing_state.record_latency("ollama-cloud.kimi-k2.7-code", 900)
         app.state.routing_state.record_latency("opencode-go.kimi-k2.7-code", 100)
         await client.post(
             "/v1/chat/completions",
@@ -233,7 +233,7 @@ async def test_warm_session_is_scoped_by_auth_fingerprint(monkeypatch, simple_ro
             json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "b"}]},
         )
 
-    assert upstream.body(0)["model"] == "ollama-local.kimi-k2.7-code"
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
     assert upstream.body(1)["model"] == "opencode-go.kimi-k2.7-code"
 
 
@@ -252,7 +252,7 @@ async def test_warm_session_reuses_same_deployment_for_same_auth_and_session(
             headers=headers,
             json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "a"}]},
         )
-        app.state.routing_state.record_latency("ollama-local.kimi-k2.7-code", 900)
+        app.state.routing_state.record_latency("ollama-cloud.kimi-k2.7-code", 900)
         app.state.routing_state.record_latency("opencode-go.kimi-k2.7-code", 100)
         await client.post(
             "/v1/chat/completions",
@@ -260,8 +260,8 @@ async def test_warm_session_reuses_same_deployment_for_same_auth_and_session(
             json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "b"}]},
         )
 
-    assert upstream.body(0)["model"] == "ollama-local.kimi-k2.7-code"
-    assert upstream.body(1)["model"] == "ollama-local.kimi-k2.7-code"
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
+    assert upstream.body(1)["model"] == "ollama-cloud.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio
@@ -278,7 +278,7 @@ async def test_chat_success_sets_gateway_routing_headers(monkeypatch, simple_rou
     assert response.status_code == 200
     assert response.headers["X-Gateway-Requested-Model"] == "kimi-k2.7-code"
     assert response.headers["X-Gateway-Model-Kind"] == "registry-model"
-    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-local.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"
     assert response.headers["X-Gateway-Fallback-Count"] == "0"
 
 
@@ -310,8 +310,8 @@ async def test_no_active_deployments_returns_diagnostic_503(monkeypatch, simple_
     assert payload["error"]["kind"] == "registry-model"
     inactive_reasons = payload["error"]["inactive_reasons"]
     assert isinstance(inactive_reasons, dict)
-    assert "ollama-local.kimi-k2.7-code" in inactive_reasons
-    assert inactive_reasons["ollama-local.kimi-k2.7-code"] == [
+    assert "ollama-cloud.kimi-k2.7-code" in inactive_reasons
+    assert inactive_reasons["ollama-cloud.kimi-k2.7-code"] == [
         "missing env OLLAMA_API_BASE",
         "missing env OLLAMA_API_KEY",
     ]
@@ -340,16 +340,16 @@ async def test_inactive_connection_model_returns_diagnostic_503(monkeypatch, sim
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
-            json={"model": "ollama-local.kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "ollama-cloud.kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 503
     payload = response.json()
     assert payload["error"]["type"] == "gateway_no_active_deployment"
-    assert payload["error"]["model"] == "ollama-local.kimi-k2.7-code"
+    assert payload["error"]["model"] == "ollama-cloud.kimi-k2.7-code"
     assert payload["error"]["kind"] == "connection-model"
     assert payload["error"]["inactive_reasons"] == {
-        "ollama-local.kimi-k2.7-code": [
+        "ollama-cloud.kimi-k2.7-code": [
             "missing env OLLAMA_API_BASE",
             "missing env OLLAMA_API_KEY",
         ],
@@ -375,7 +375,7 @@ async def test_unexpected_upstream_exception_clears_active_attempt(monkeypatch, 
         )
 
     assert response.status_code == 500
-    assert app.state.routing_state.snapshot()["deployments"]["ollama-local.kimi-k2.7-code"]["active"] == 0
+    assert app.state.routing_state.snapshot()["deployments"]["ollama-cloud.kimi-k2.7-code"]["active"] == 0
 
 
 @pytest.mark.asyncio
@@ -403,7 +403,7 @@ async def test_transport_exhaustion_returns_502_gateway_upstream_exhausted(monke
     assert error["type"] == "gateway_upstream_exhausted"
     assert error["message"] == "All candidate deployments failed before a response stream started."
     assert error["model"] == "kimi-k2.7-code"
-    assert error["attempted"] == ["ollama-local.kimi-k2.7-code", "opencode-go.kimi-k2.7-code"]
+    assert error["attempted"] == ["ollama-cloud.kimi-k2.7-code", "opencode-go.kimi-k2.7-code"]
     assert error["last_status"] == "network_error"
     assert response.headers["X-Gateway-Fallback-Count"] == "2"
     assert response.headers["X-Gateway-Attempted-Models"] == ",".join(error["attempted"])
@@ -428,7 +428,7 @@ async def test_http_failure_exhaustion_passes_through_upstream_error_with_gatewa
     assert response.json() == {"error": {"type": "unavailable", "message": "try later"}}
     assert response.headers["X-Gateway-Requested-Model"] == "kimi-k2.7-code"
     assert response.headers["X-Gateway-Fallback-Count"] == "1"
-    assert response.headers["X-Gateway-Attempted-Models"] == "ollama-local.kimi-k2.7-code,opencode-go.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Attempted-Models"] == "ollama-cloud.kimi-k2.7-code,opencode-go.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio

@@ -63,7 +63,7 @@ async def test_chat_emits_prompt_free_usage_event(monkeypatch):
     assert event.session_hash != "session-raw"
     assert event.requested_model == "coder"
     assert event.selected_model == "coder"
-    assert event.served_model == "ollama-local.kimi-k2.7-code"
+    assert event.served_model == "ollama-cloud.kimi-k2.7-code"
     assert event.status == "200"
     assert event.prompt_tokens == 10
     assert event.completion_tokens == 4

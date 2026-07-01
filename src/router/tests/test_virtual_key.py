@@ -83,7 +83,7 @@ async def test_virtual_key_allowlist_403_is_surfaced(monkeypatch, simple_route_c
 
     assert response.status_code == 403
     assert seen["auth"] == f"Bearer {VIRTUAL_KEY}"
-    assert seen["model"] == "ollama-local.kimi-k2.7-code"
+    assert seen["model"] == "ollama-cloud.kimi-k2.7-code"
     body = response.json()
     assert "key_model_access_denied" in json.dumps(body)
     assert response.headers.get("X-Gateway-Fallback-Count") == "0"
@@ -111,4 +111,4 @@ async def test_master_key_smoke_still_works(monkeypatch, simple_route_config_pat
         )
 
     assert response.status_code == 200
-    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-local.kimi-k2.7-code"
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"

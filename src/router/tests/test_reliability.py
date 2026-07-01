@@ -90,7 +90,7 @@ def _retry_handler():
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
         seen.append(model)
-        if model == "ollama-local.kimi-k2.7-code":
+        if model == "ollama-cloud.kimi-k2.7-code":
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
@@ -132,7 +132,7 @@ async def test_backoff_grows_exponentially(monkeypatch, simple_route_config_path
     async def handler(request: httpx.Request) -> httpx.Response:
         model = json.loads(request.content)["model"]
         seen.append(model)
-        if model in {"ollama-local.kimi-k2.7-code", "deepseek-api.deepseek-v4-pro"}:
+        if model in {"ollama-cloud.kimi-k2.7-code", "deepseek-api.deepseek-v4-pro"}:
             return httpx.Response(503, json={"error": "unavailable"})
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
 
