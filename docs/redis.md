@@ -200,17 +200,20 @@ def _session_store(redis_url: str | None) -> SessionStore:
 
 ### Warm-session routing
 
-In `src/router/routing.py`, `choose_model()` checks the session before falling
-back to the default model:
+In `src/router/main.py`, warm-session stickiness only applies when the client
+sends `X-Session-Id`. The stored deployment is tried first only if it still
+belongs to the current resolved candidate set and is not in quota cooldown:
 
 ```python
-if session and _is_warm(session, now, config.cache_ttl_seconds):
-    session_model = session.get("model")
-    if isinstance(session_model, str) and session_model in config.allowed_models:
-        return RouteDecision(model=session_model, reason="warm-session")
+session_key = _warm_session_key(x_session_id, auth)
+session = await app.state.session_store.get(session_key)
+served = session.get("served_deployment") if session else None
+if isinstance(served, str) and served in resolved.ordered_deployments:
+    return served
 ```
 
-A session is warm when `now - last_used_ts < cache_ttl_seconds`.
+The session TTL is enforced by the session store with
+`route_config.cache_ttl_seconds`.
 
 ### Session write
 
@@ -218,8 +221,13 @@ On every successful request, the router writes the session:
 
 ```python
 await app.state.session_store.set(
-    session_id,
-    {"model": current_model, "last_used_ts": time.time(), ...},
+    session_key,
+    {
+        "requested_model": resolved.requested_model,
+        "model_kind": resolved.kind,
+        "served_deployment": served_deployment,
+        "timestamp": time.time(),
+    },
     ttl_seconds=app.state.route_config.cache_ttl_seconds,
 )
 ```

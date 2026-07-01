@@ -73,7 +73,6 @@ class RouteConfig:
     combos: dict[str, ComboRuntime] = field(default_factory=dict)
     deployments: dict[str, DeploymentRuntime] = field(default_factory=dict)
     registry_models: dict[str, list[str]] = field(default_factory=dict)
-    required_env: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -168,8 +167,7 @@ def _order_candidates(
     """Order candidate deployment ids by the combo strategy (score or priority)."""
     deployments = config.deployments
     if combo is not None and combo.strategy == "priority":
-        # Priority strategy: order by priority asc (lower is better), keep
-        # cooldown deployments at the end. Stable on configured order.
+        # Priority strategy keeps configured order, with cooled deployments last.
         cooled: list[str] = []
         live: list[str] = []
         for dep_id in candidate_ids:
@@ -177,8 +175,6 @@ def _order_candidates(
                 cooled.append(dep_id)
             else:
                 live.append(dep_id)
-        live.sort(key=lambda d: deployments[d].priority)
-        cooled.sort(key=lambda d: deployments[d].priority)
         return live + cooled
 
     weights = combo.scoring if combo is not None and combo.scoring is not None else None

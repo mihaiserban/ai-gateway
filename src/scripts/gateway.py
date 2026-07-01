@@ -80,7 +80,7 @@ def _synthesized_env(catalog: GatewayCatalog, route_config: RouteConfig) -> dict
 def _local_catalog_entries(catalog: GatewayCatalog, view: str) -> list[dict[str, Any]]:
     route_config = _route_config_from_catalog(catalog)
     env = _synthesized_env(catalog, route_config)
-    return build_live_model_catalog(route_config, None, view=view, env=env)
+    return build_live_model_catalog(route_config, view=view, env=env)
 
 
 def _resolve_target_base_url(args: argparse.Namespace, clients: dict[str, Any]) -> str:
@@ -177,8 +177,8 @@ CLIENTS: dict[str, ClientEntry] = {
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
-    generate_runtime_configs()
-    print("Regenerated runtime configs from src/gateway.config.yaml")
+    generate_runtime_configs(config_path=args.config)
+    print(f"Regenerated runtime configs from {args.config}")
     return 0
 
 

@@ -72,7 +72,6 @@ registry_models:
         "OLLAMA_API_KEY",
     )
     assert config.registry_models == {"kimi-k2.7-code": ["ollama-local.kimi-k2.7-code"]}
-    assert config.required_env["ollama-local.kimi-k2.7-code"] == ["OLLAMA_API_BASE", "OLLAMA_API_KEY"]
 
 
 def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):

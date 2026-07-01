@@ -449,57 +449,57 @@ OpenCode static provider shape:
 
 **Create**
 
-- `src/router/gateway_config.py`  
+- `src/router/gateway_config.py`
   Loads and validates human YAML. Expands provider registry metadata and active connections into internal deployments.
 
-- `src/router/live_catalog.py`  
+- `src/router/live_catalog.py`
   Builds `/v1/models` entries from combos, registry metadata, active connections, and routing state.
 
-- `src/router/routing_state.py`  
+- `src/router/routing_state.py`
   Tracks in-memory runtime signals and orders candidate deployments.
 
-- `src/scripts/gateway.py`  
+- `src/scripts/gateway.py`
   One local CLI front door: `generate`, `doctor`, `explain`, `models`, and `setup`.
 
-- `src/clients/opencode_plugin/index.js`  
+- `src/clients/opencode_plugin/index.js`
   Minimal first-party OpenCode plugin installed by `gateway.py setup opencode --mode local-plugin`. Fetches the live gateway catalog and emits an OpenAI-compatible provider.
 
-- `src/router/tests/test_gateway_config.py`  
+- `src/router/tests/test_gateway_config.py`
   Tests config loading, provider registry expansion, validation, and generated deployment ids.
 
-- `src/router/tests/test_live_catalog.py`  
+- `src/router/tests/test_live_catalog.py`
   Tests default full catalog, filtered views, registry model grouping, and qualified connection models.
 
-- `src/router/tests/test_routing_state.py`  
+- `src/router/tests/test_routing_state.py`
   Tests scoring, cooldowns, latency preference, and active connection density.
 
-- `src/router/tests/test_gateway_cli.py`  
+- `src/router/tests/test_gateway_cli.py`
   Tests CLI model rendering and client setup dry-run/apply behavior with temporary paths.
 
 **Modify**
 
-- `src/gateway.config.yaml`  
+- `src/gateway.config.yaml`
   Replace `models` and `aliases` with `providers`, `connections`, `combos`, and `clients`.
 
-- `src/scripts/generate_configs.py`  
+- `src/scripts/generate_configs.py`
   Generate LiteLLM and router YAML from `GatewayCatalog`.
 
-- `src/router/config.py`  
+- `src/router/config.py`
   Load the new generated router config shape.
 
-- `src/router/routing.py`  
+- `src/router/routing.py`
   Resolve requested model ids as combo, registry-model, or connection-model.
 
-- `src/router/main.py`  
+- `src/router/main.py`
   Serve live `/v1/models` and send internal deployment ids to LiteLLM.
 
-- `src/router/metrics.py`  
+- `src/router/metrics.py`
   Expose connection attempt counters and latency snapshots already tracked by routing state.
 
-- `src/router/dashboard.py`  
+- `src/router/dashboard.py`
   Add catalog and routing-state JSON to `/dashboard/api/live`.
 
-- `README.md`, `src/README.md`, `docs/models.md`  
+- `README.md`, `src/README.md`, `docs/models.md`
   Document the new model catalog and commands.
 
 **Delete**
@@ -859,7 +859,6 @@ class Deployment:
     api_base_env: str | None = None
     api_key_env: str | None = None
     drop_params: tuple[str, ...] = ()
-    timeout: int = 120
     priority: int = 100
     stability: float = 0.8
     max_concurrent: int | None = None
@@ -1020,7 +1019,6 @@ default_model: str
 combos: dict[str, ComboRuntime]
 deployments: dict[str, DeploymentRuntime]
 registry_models: dict[str, list[str]]
-required_env: dict[str, list[str]]
 quota_cooldown_seconds: int = 300
 catalog_default_view: str = "all"
 ```
@@ -1073,7 +1071,7 @@ git commit -m "feat: generate runtime configs from live catalog"
 - Produces:
   - `deployment_is_active(deployment: DeploymentRuntime, env: Mapping[str, str]) -> tuple[bool, list[str]]`
   - `active_deployment_ids(config: RouteConfig, env: Mapping[str, str]) -> set[str]`
-  - `build_live_model_catalog(config: RouteConfig, state: GatewayRoutingState | None, view: str = "all", env: Mapping[str, str] | None = None) -> list[dict[str, Any]]`
+  - `build_live_model_catalog(config: RouteConfig, view: str = "all", env: Mapping[str, str] | None = None) -> list[dict[str, Any]]`
   - `/v1/models` default full catalog.
   - `/v1/models?view=combos|registry|connections|all`.
 
@@ -1084,7 +1082,7 @@ Add `src/router/tests/test_live_catalog.py` with tests equivalent to:
 ```python
 def test_all_view_includes_combos_registry_and_connection_models(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x", "DEEPSEEK_API_KEY": "x"}
-    ids = [entry["id"] for entry in build_live_model_catalog(route_config, None, view="all", env=env)]
+    ids = [entry["id"] for entry in build_live_model_catalog(route_config, view="all", env=env)]
     assert "coder" in ids
     assert "kimi-k2.7-code" in ids
     assert "ollama-local.kimi-k2.7-code" in ids
@@ -1093,21 +1091,21 @@ def test_all_view_includes_combos_registry_and_connection_models(route_config):
 ```python
 def test_combo_view_only_includes_combos(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x", "DEEPSEEK_API_KEY": "x"}
-    entries = build_live_model_catalog(route_config, None, view="combos", env=env)
+    entries = build_live_model_catalog(route_config, view="combos", env=env)
     assert {entry["gateway"]["kind"] for entry in entries} == {"combo"}
 ```
 
 ```python
 def test_registry_model_groups_active_deployments(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x", "OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
-    entry = next(e for e in build_live_model_catalog(route_config, None, env=env) if e["id"] == "kimi-k2.7-code")
+    entry = next(e for e in build_live_model_catalog(route_config, env=env) if e["id"] == "kimi-k2.7-code")
     assert entry["gateway"]["kind"] == "registry-model"
     assert "ollama-local.kimi-k2.7-code" in entry["gateway"]["deployments"]
 ```
 
 ```python
 def test_missing_required_env_hides_deployment(route_config):
-    entries = build_live_model_catalog(route_config, None, view="connections", env={})
+    entries = build_live_model_catalog(route_config, view="connections", env={})
     ids = [entry["id"] for entry in entries]
     assert "ollama-local.kimi-k2.7-code" not in ids
 ```
@@ -1115,7 +1113,7 @@ def test_missing_required_env_hides_deployment(route_config):
 ```python
 def test_metadata_aggregation_is_deterministic(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x", "OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
-    entry = next(e for e in build_live_model_catalog(route_config, None, env=env) if e["id"] == "kimi-k2.7-code")
+    entry = next(e for e in build_live_model_catalog(route_config, env=env) if e["id"] == "kimi-k2.7-code")
     assert entry["gateway"]["providers"] == ["ollama", "opencode-go"]
     assert entry["gateway"]["connections"] == ["ollama-local", "opencode-go"]
     assert entry["gateway"]["capabilities"] == ["chat", "coding"]
@@ -1124,7 +1122,7 @@ def test_metadata_aggregation_is_deterministic(route_config):
 ```python
 def test_all_catalog_order_is_stable(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x", "DEEPSEEK_API_KEY": "x", "OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
-    ids = [entry["id"] for entry in build_live_model_catalog(route_config, None, env=env)]
+    ids = [entry["id"] for entry in build_live_model_catalog(route_config, env=env)]
     assert ids.index("coder") < ids.index("kimi-k2.7-code")
     assert ids.index("kimi-k2.7-code") < ids.index("ollama-local.kimi-k2.7-code")
 ```
@@ -1132,7 +1130,7 @@ def test_all_catalog_order_is_stable(route_config):
 ```python
 def test_rejects_unknown_view(route_config):
     with pytest.raises(ValueError, match="catalog view"):
-        build_live_model_catalog(route_config, None, view="unknown", env={})
+        build_live_model_catalog(route_config, view="unknown", env={})
 ```
 
 - [ ] **Step 2: Write failing `/v1/models` tests**

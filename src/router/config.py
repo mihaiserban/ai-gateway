@@ -49,7 +49,6 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     combos = _load_combos(data.get("combos") or {})
     deployments = _load_deployments(data.get("deployments") or {})
     registry_models = _load_registry_models(data.get("registry_models") or {})
-    required_env = {dep_id: list(dep.required_env) for dep_id, dep in deployments.items()}
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
@@ -62,7 +61,6 @@ def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
         combos=combos,
         deployments=deployments,
         registry_models=registry_models,
-        required_env=required_env,
     )
 
 

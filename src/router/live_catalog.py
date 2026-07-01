@@ -11,9 +11,7 @@ The `/v1/models` endpoint exposes three kinds of entries:
 
 Deployments whose ``required_env`` variables are missing from the runtime
 environment are hidden, as are combos with no active candidates and registry
-models with no active deployments. Task 4 will pass a ``GatewayRoutingState``
-to enrich entries; until then ``state`` may be ``None`` and the catalog is
-built from config alone.
+models with no active deployments.
 """
 
 from __future__ import annotations
@@ -46,16 +44,10 @@ def active_deployment_ids(config: RouteConfig, env: Mapping[str, str]) -> set[st
 
 def build_live_model_catalog(
     config: RouteConfig,
-    state: Any,
     view: str = "all",
     env: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build the live model catalog for the ``/v1/models`` endpoint.
-
-    ``state`` is reserved for Task 4's ``GatewayRoutingState`` enrichment; it is
-    accepted but ignored in Task 3. ``env`` defaults to ``os.environ``.
-    """
-    _ = state  # Reserved for Task 4.
+    """Build the live model catalog for the ``/v1/models`` endpoint."""
     if view not in _VALID_VIEWS:
         raise ValueError(f"Unknown catalog view {view!r}. Use all, combos, registry, or connections.")
 

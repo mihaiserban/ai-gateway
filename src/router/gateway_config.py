@@ -113,7 +113,6 @@ class Deployment:
     api_base_env: str | None = None
     api_key_env: str | None = None
     drop_params: tuple[str, ...] = ()
-    timeout: int = 120
     priority: int = 100
     stability: float = 0.8
     max_concurrent: int | None = None

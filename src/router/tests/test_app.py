@@ -307,6 +307,7 @@ async def test_no_active_deployments_returns_diagnostic_503(monkeypatch, simple_
     payload = response.json()
     assert payload["error"]["type"] == "gateway_no_active_deployment"
     assert payload["error"]["model"] == "kimi-k2.7-code"
+    assert payload["error"]["kind"] == "registry-model"
     inactive_reasons = payload["error"]["inactive_reasons"]
     assert isinstance(inactive_reasons, dict)
     assert "ollama-local.kimi-k2.7-code" in inactive_reasons
@@ -319,6 +320,62 @@ async def test_no_active_deployments_returns_diagnostic_503(monkeypatch, simple_
         "missing env OPENCODE_GO_API_BASE",
         "missing env OPENCODE_GO_API_KEY",
     ]
+
+
+@pytest.mark.asyncio
+async def test_inactive_connection_model_returns_diagnostic_503(monkeypatch, simple_route_config_path: str):
+    monkeypatch.delenv("OLLAMA_API_BASE", raising=False)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("should not proxy")
+
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        transport=httpx.MockTransport(handler),
+        config_path=simple_route_config_path,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "ollama-local.kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["error"]["type"] == "gateway_no_active_deployment"
+    assert payload["error"]["model"] == "ollama-local.kimi-k2.7-code"
+    assert payload["error"]["kind"] == "connection-model"
+    assert payload["error"]["inactive_reasons"] == {
+        "ollama-local.kimi-k2.7-code": [
+            "missing env OLLAMA_API_BASE",
+            "missing env OLLAMA_API_KEY",
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_unexpected_upstream_exception_clears_active_attempt(monkeypatch, simple_route_config_path: str):
+    _env(monkeypatch, {**ENV_OLLAMA, **ENV_GO})
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("boom")
+
+    app = _app(monkeypatch, simple_route_config_path, {**ENV_OLLAMA, **ENV_GO}, httpx.MockTransport(handler))
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == 500
+    assert app.state.routing_state.snapshot()["deployments"]["ollama-local.kimi-k2.7-code"]["active"] == 0
 
 
 @pytest.mark.asyncio

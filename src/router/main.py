@@ -100,7 +100,6 @@ def create_app(
         try:
             data = build_live_model_catalog(
                 app.state.route_config,
-                getattr(app.state, "routing_state", None),
                 view=view,
             )
         except ValueError as exc:
@@ -150,6 +149,7 @@ def create_app(
                 error_type="gateway_no_active_deployment",
                 message=f"no active deployment for model {resolved.requested_model!r}",
                 requested_model=resolved.requested_model,
+                kind=_configured_model_kind(config, resolved.requested_model),
                 inactive_reasons=_inactive_reasons(config, resolved.requested_model),
                 extra_headers=_gateway_headers(resolved, served="", attempted=[], fallback_count=0),
             )
@@ -184,27 +184,29 @@ def create_app(
             attempted.append(deployment_id)
             attempt_token = state.start_attempt(deployment_id)
             attempt_started = time.perf_counter()
+            attempt_status: int | str = "upstream_error"
             try:
                 if is_stream:
                     response = await _proxy_stream(request, "/v1/chat/completions", upstream_body)
                 else:
                     response = await _proxy_json(request, "/v1/chat/completions", upstream_body)
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+                attempt_status = response.status_code
+            except httpx.TransportError as exc:
                 last_exception = exc
                 last_response = None
-                latency_ms = (time.perf_counter() - attempt_started) * 1000
-                state.finish_attempt(attempt_token, status="transport_error", latency_ms=latency_ms)
+                attempt_status = "transport_error"
                 app.state.metrics.record_provider_attempt(
                     deployment_id, _exception_status(exc), success=False, retryable_failure=True
                 )
                 fallback_count = index + 1
                 continue
-            latency_ms = (time.perf_counter() - attempt_started) * 1000
+            finally:
+                latency_ms = (time.perf_counter() - attempt_started) * 1000
+                state.finish_attempt(attempt_token, status=attempt_status, latency_ms=latency_ms)
             last_response = response
             last_exception = None
             success = _is_success(response)
             should_fallback = not success and is_retryable_failure(response.status_code)
-            state.finish_attempt(attempt_token, status=response.status_code, latency_ms=latency_ms)
             app.state.metrics.record_provider_attempt(
                 deployment_id,
                 response.status_code,
@@ -675,9 +677,12 @@ def _gateway_error(
     message: str,
     requested_model: str,
     extra_headers: dict[str, str],
+    kind: str | None = None,
     inactive_reasons: dict[str, list[str]] | None = None,
 ) -> JSONResponse:
     error: dict[str, Any] = {"type": error_type, "message": message, "model": requested_model}
+    if kind is not None:
+        error["kind"] = kind
     if inactive_reasons is not None:
         error["inactive_reasons"] = inactive_reasons
     return JSONResponse(
@@ -692,7 +697,10 @@ def _inactive_reasons(config: Any, requested_model: str) -> dict[str, list[str]]
 
     env = os.environ
     reasons: dict[str, list[str]] = {}
-    deployment_ids = config.registry_models.get(requested_model, [])
+    if requested_model in config.deployments:
+        deployment_ids = [requested_model]
+    else:
+        deployment_ids = config.registry_models.get(requested_model, [])
     if not deployment_ids:
         combo = config.combos.get(requested_model)
         if combo is not None:
@@ -706,6 +714,16 @@ def _inactive_reasons(config: Any, requested_model: str) -> dict[str, list[str]]
         if not active:
             reasons[dep_id] = [f"missing env {name}" for name in missing]
     return reasons
+
+
+def _configured_model_kind(config: Any, requested_model: str) -> str | None:
+    if requested_model in config.combos:
+        return "combo"
+    if requested_model in config.deployments:
+        return "connection-model"
+    if requested_model in config.registry_models:
+        return "registry-model"
+    return None
 
 
 async def _resolve_warm_deployment(
