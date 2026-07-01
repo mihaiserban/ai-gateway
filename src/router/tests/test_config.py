@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 
 from router import config as config_mod
-from router.config import load_route_config
-from router.routing import DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS, RouteConfig
+from router.routing import RouteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,19 +38,24 @@ def test_load_route_config_from_yaml_populates_fields(tmp_path):
         tmp_path / "router_config.yaml",
         """
 cache_ttl_seconds: 300
-default_model: planner
-allowed_models:
-  - explorer
-  - planner
-fallbacks:
-  explorer:
-    - planner
-timeouts:
-  explorer: 30
-  planner: 120
-provider_models:
-  explorer: ollama_chat/deepseek-v4-flash
-  planner: openai/glm-5.2
+default_model: coder
+quota_cooldown_seconds: 60
+combos:
+  coder:
+    strategy: score
+    candidates:
+      - ollama-local.kimi-k2.7-code
+deployments:
+  ollama-local.kimi-k2.7-code:
+    provider: ollama
+    connection: ollama-local
+    model: kimi-k2.7-code
+    required_env:
+      - OLLAMA_API_BASE
+      - OLLAMA_API_KEY
+registry_models:
+  kimi-k2.7-code:
+    - ollama-local.kimi-k2.7-code
 """,
     )
 
@@ -59,14 +63,16 @@ provider_models:
 
     assert isinstance(config, RouteConfig)
     assert config.cache_ttl_seconds == 300
-    assert config.default_model == "planner"
-    assert config.allowed_models == {"explorer", "planner"}
-    assert config.fallbacks == {"explorer": ["planner"]}
-    assert config.timeouts == {"explorer": 30, "planner": 120}
-    assert config.provider_models == {
-        "explorer": "ollama_chat/deepseek-v4-flash",
-        "planner": "openai/glm-5.2",
-    }
+    assert config.default_model == "coder"
+    assert config.quota_cooldown_seconds == 60
+    assert config.combos["coder"].candidates == ("ollama-local.kimi-k2.7-code",)
+    assert config.deployments["ollama-local.kimi-k2.7-code"].provider == "ollama"
+    assert config.deployments["ollama-local.kimi-k2.7-code"].required_env == (
+        "OLLAMA_API_BASE",
+        "OLLAMA_API_KEY",
+    )
+    assert config.registry_models == {"kimi-k2.7-code": ["ollama-local.kimi-k2.7-code"]}
+    assert config.required_env["ollama-local.kimi-k2.7-code"] == ["OLLAMA_API_BASE", "OLLAMA_API_KEY"]
 
 
 def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
@@ -76,10 +82,12 @@ def test_load_route_config_missing_file_falls_back_to_defaults(tmp_path):
 
     assert isinstance(config, RouteConfig)
     assert config.cache_ttl_seconds == 600
-    assert config.allowed_models == set(DEFAULT_ALLOWED_MODELS)
-    assert config.fallbacks == dict(DEFAULT_FALLBACKS)
-    assert config.timeouts == {}
     assert config.default_model == "coder"
+    assert config.quota_cooldown_seconds == 300
+    assert config.catalog_default_view == "all"
+    assert config.combos == {}
+    assert config.deployments == {}
+    assert config.registry_models == {}
 
 
 def test_load_route_config_respects_env_var(tmp_path, monkeypatch):
@@ -87,8 +95,11 @@ def test_load_route_config_respects_env_var(tmp_path, monkeypatch):
         tmp_path / "custom.yaml",
         """
 cache_ttl_seconds: 42
-allowed_models:
-  - only-one
+default_model: coder
+combos:
+  coder:
+    strategy: score
+    candidates: []
 """,
     )
     monkeypatch.setenv("ROUTER_CONFIG_PATH", str(cfg_path))
@@ -96,125 +107,21 @@ allowed_models:
     config = config_mod.load_route_config()
 
     assert config.cache_ttl_seconds == 42
-    assert config.allowed_models == {"only-one"}
 
 
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
-
-
-def _good_yaml(tmp_path, extra: str = "") -> Path:
-    return _write_yaml(
+def test_load_route_config_applies_catalog_default_view(tmp_path):
+    cfg_path = _write_yaml(
         tmp_path / "router_config.yaml",
-        f"""
-cache_ttl_seconds: 600
-default_model: explorer
-allowed_models:
-  - explorer
-  - planner
-  - planner-ocg
-fallbacks:
-  explorer:
-    - planner
-  planner:
-    - planner-ocg
-    - explorer
-{extra}
-""",
-    )
-
-
-def test_load_route_config_reads_model_prices(tmp_path):
-    path = tmp_path / "router_config.yaml"
-    path.write_text(
         """
-cache_ttl_seconds: 600
 default_model: coder
-allowed_models:
-  - coder
-fallbacks:
-  coder: []
-model_prices:
-  coder:
-    input_cost_per_token: 0.25
-    output_cost_per_token: 0.75
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    config = load_route_config(str(path))
-
-    assert config.model_prices == {"coder": (0.25, 0.75)}
-
-
-def test_validate_ok_for_consistent_config(tmp_path):
-    cfg_path = _good_yaml(tmp_path)
-    config = config_mod.load_route_config(config_path=str(cfg_path))
-    # Should not raise.
-    config_mod.validate_route_config(config)
-
-
-def test_validate_fails_when_fallback_key_not_in_allowed_models(tmp_path):
-    cfg_path = _write_yaml(
-        tmp_path / "router_config.yaml",
-        """
-cache_ttl_seconds: 600
-default_model: explorer
-allowed_models:
-  - explorer
-fallbacks:
-  ghost:
-    - explorer
+catalog:
+  default_view: internal
 """,
     )
+
     config = config_mod.load_route_config(config_path=str(cfg_path))
 
-    with pytest.raises(config_mod.ConfigValidationError) as exc:
-        config_mod.validate_route_config(config)
-
-    assert "ghost" in str(exc.value)
-
-
-def test_validate_fails_when_fallback_target_not_in_allowed_models(tmp_path):
-    cfg_path = _write_yaml(
-        tmp_path / "router_config.yaml",
-        """
-cache_ttl_seconds: 600
-default_model: explorer
-allowed_models:
-  - explorer
-fallbacks:
-  explorer:
-    - unknown-model
-""",
-    )
-    config = config_mod.load_route_config(config_path=str(cfg_path))
-
-    with pytest.raises(config_mod.ConfigValidationError) as exc:
-        config_mod.validate_route_config(config)
-
-    assert "unknown-model" in str(exc.value)
-
-
-def test_validate_fails_when_default_model_not_in_allowed_models(tmp_path):
-    cfg_path = _write_yaml(
-        tmp_path / "router_config.yaml",
-        """
-cache_ttl_seconds: 600
-default_model: expensive
-allowed_models:
-  - explorer
-fallbacks:
-  explorer: []
-""",
-    )
-    config = config_mod.load_route_config(config_path=str(cfg_path))
-
-    with pytest.raises(config_mod.ConfigValidationError) as exc:
-        config_mod.validate_route_config(config)
-
-    assert "default_model" in str(exc.value)
+    assert config.catalog_default_view == "internal"
 
 
 # ---------------------------------------------------------------------------
@@ -222,29 +129,54 @@ fallbacks:
 # ---------------------------------------------------------------------------
 
 
-def test_cross_check_ok_when_allowed_models_in_litellm(tmp_path):
+def _good_yaml(tmp_path) -> Path:
+    return _write_yaml(
+        tmp_path / "router_config.yaml",
+        """
+default_model: coder
+combos:
+  coder:
+    strategy: score
+    candidates:
+      - ollama-local.kimi-k2.7-code
+deployments:
+  ollama-local.kimi-k2.7-code:
+    provider: ollama
+    connection: ollama-local
+    model: kimi-k2.7-code
+    required_env:
+      - OLLAMA_API_BASE
+      - OLLAMA_API_KEY
+registry_models:
+  kimi-k2.7-code:
+    - ollama-local.kimi-k2.7-code
+""",
+    )
+
+
+def test_cross_check_ok_when_deployments_in_litellm(tmp_path):
     cfg_path = _good_yaml(tmp_path)
     config = config_mod.load_route_config(config_path=str(cfg_path))
     litellm_path = _write_litellm(
         tmp_path / "litellm.config.yaml",
-        ["explorer", "planner", "planner-ocg"],
+        ["ollama-local.kimi-k2.7-code"],
     )
 
     config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))
 
 
-def test_cross_check_fails_when_allowed_alias_missing_from_litellm(tmp_path):
+def test_cross_check_fails_when_deployment_missing_from_litellm(tmp_path):
     cfg_path = _good_yaml(tmp_path)
     config = config_mod.load_route_config(config_path=str(cfg_path))
     litellm_path = _write_litellm(
         tmp_path / "litellm.config.yaml",
-        ["explorer", "planner"],  # missing planner-ocg
+        [],  # missing the deployment
     )
 
     with pytest.raises(config_mod.ConfigValidationError) as exc:
         config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))
 
-    assert "planner-ocg" in str(exc.value)
+    assert "ollama-local.kimi-k2.7-code" in str(exc.value)
 
 
 def test_cross_check_warns_but_does_not_crash_when_litellm_missing(tmp_path, caplog):

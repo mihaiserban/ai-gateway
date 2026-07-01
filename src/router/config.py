@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from router.routing import DEFAULT_ALLOWED_MODELS, DEFAULT_FALLBACKS, RouteConfig
+from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig
 
 logger = logging.getLogger("router.config")
 
@@ -37,62 +37,76 @@ def load_route_config(config_path: str | None = None) -> RouteConfig:
 def _route_config_from_dict(data: dict[str, Any]) -> RouteConfig:
     cache_ttl = int(data.get("cache_ttl_seconds", 600))
     default_model = str(data.get("default_model", RouteConfig.default_model))
-    allowed = set(data.get("allowed_models") or DEFAULT_ALLOWED_MODELS)
-    fallbacks = dict(data.get("fallbacks") or DEFAULT_FALLBACKS)
-    timeouts = dict(data.get("timeouts") or {})
     retry_base_delay = float(data.get("retry_base_delay", 0.2))
     retry_max_delay = float(data.get("retry_max_delay", 2.0))
-    cache_key_aliases = list(data.get("cache_key_aliases") or [])
-    provider_models = dict(data.get("provider_models") or {})
-    model_prices = _model_prices(data.get("model_prices") or {})
     max_concurrent_upstream = int(data.get("max_concurrent_upstream", 0))
+    quota_cooldown_seconds = int(data.get("quota_cooldown_seconds", 300))
+
+    catalog_raw = data.get("catalog") or {}
+    catalog_default_view = str(catalog_raw.get("default_view", "all")) if isinstance(catalog_raw, dict) else "all"
+
+    combos = _load_combos(data.get("combos") or {})
+    deployments = _load_deployments(data.get("deployments") or {})
+    registry_models = _load_registry_models(data.get("registry_models") or {})
+    required_env = {dep_id: list(dep.required_env) for dep_id, dep in deployments.items()}
 
     return RouteConfig(
         cache_ttl_seconds=cache_ttl,
         default_model=default_model,
-        allowed_models=allowed,
-        fallbacks=fallbacks,
-        timeouts=timeouts,
         retry_base_delay=retry_base_delay,
         retry_max_delay=retry_max_delay,
-        cache_key_aliases=cache_key_aliases,
-        provider_models=provider_models,
-        model_prices=model_prices,
         max_concurrent_upstream=max_concurrent_upstream,
+        quota_cooldown_seconds=quota_cooldown_seconds,
+        catalog_default_view=catalog_default_view,
+        combos=combos,
+        deployments=deployments,
+        registry_models=registry_models,
+        required_env=required_env,
     )
 
 
-def _model_prices(raw: Any) -> dict[str, tuple[float, float]]:
-    if not isinstance(raw, dict):
-        return {}
-    prices: dict[str, tuple[float, float]] = {}
-    for alias, value in raw.items():
-        if not isinstance(alias, str) or not isinstance(value, dict):
+def _load_combos(raw: dict[str, Any]) -> dict[str, ComboRuntime]:
+    combos: dict[str, ComboRuntime] = {}
+    for combo_id, body in raw.items():
+        if not isinstance(body, dict):
             continue
-        input_cost = value.get("input_cost_per_token")
-        output_cost = value.get("output_cost_per_token")
-        if input_cost is None or output_cost is None:
+        strategy = str(body.get("strategy", "score"))
+        candidates_raw = body.get("candidates") or []
+        candidates = tuple(str(c) for c in candidates_raw) if isinstance(candidates_raw, list) else ()
+        task_raw = body.get("task")
+        task = str(task_raw) if isinstance(task_raw, str) else None
+        combos[combo_id] = ComboRuntime(strategy=strategy, candidates=candidates, task=task)
+    return combos
+
+
+def _load_deployments(raw: dict[str, Any]) -> dict[str, DeploymentRuntime]:
+    deployments: dict[str, DeploymentRuntime] = {}
+    for deployment_id, body in raw.items():
+        if not isinstance(body, dict):
             continue
-        prices[alias] = (float(input_cost), float(output_cost))
-    return prices
+        required_env_raw = body.get("required_env") or []
+        required_env = tuple(str(e) for e in required_env_raw) if isinstance(required_env_raw, list) else ()
+        deployments[deployment_id] = DeploymentRuntime(
+            provider=str(body.get("provider", "")),
+            connection=str(body.get("connection", "")),
+            model=str(body.get("model", "")),
+            required_env=required_env,
+        )
+    return deployments
 
 
-def validate_route_config(config: RouteConfig) -> None:
-    """Fail fast if fallbacks reference aliases outside ``allowed_models``."""
-    allowed = config.allowed_models
-    if config.default_model not in allowed:
-        raise ConfigValidationError(f"default_model {config.default_model!r} is not in allowed_models")
-
-    for key, targets in config.fallbacks.items():
-        if key not in allowed:
-            raise ConfigValidationError(f"fallback key {key!r} is not in allowed_models")
-        for target in targets:
-            if target not in allowed:
-                raise ConfigValidationError(f"fallback target {target!r} (under {key!r}) is not in allowed_models")
+def _load_registry_models(raw: dict[str, Any]) -> dict[str, list[str]]:
+    registry: dict[str, list[str]] = {}
+    for model_id, deployment_ids in raw.items():
+        if isinstance(deployment_ids, list):
+            registry[model_id] = [str(d) for d in deployment_ids]
+        else:
+            registry[model_id] = []
+    return registry
 
 
 def cross_check_litellm(config: RouteConfig, litellm_path: str | None = None) -> None:
-    """Fail fast if an allowed alias is missing from the LiteLLM model list.
+    """Fail fast if a configured deployment is missing from the LiteLLM model list.
 
     If the LiteLLM config file is missing, warn but do not crash.
     """
@@ -113,17 +127,16 @@ def cross_check_litellm(config: RouteConfig, litellm_path: str | None = None) ->
             if isinstance(name, str):
                 litellm_names.add(name)
 
-    missing = config.allowed_models - litellm_names
+    missing = set(config.deployments) - litellm_names
     if missing:
-        raise ConfigValidationError("allowed_models missing from litellm model_list: " + ", ".join(sorted(missing)))
+        raise ConfigValidationError("deployments missing from litellm model_list: " + ", ".join(sorted(missing)))
 
 
 def load_and_validate(
     config_path: str | None = None,
     litellm_path: str | None = None,
 ) -> RouteConfig:
-    """Load, validate, and cross-check a RouteConfig in one step."""
+    """Load and cross-check a RouteConfig in one step."""
     config = load_route_config(config_path=config_path)
-    validate_route_config(config)
     cross_check_litellm(config, litellm_path=litellm_path)
     return config
