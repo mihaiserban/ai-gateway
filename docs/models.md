@@ -1,32 +1,55 @@
 # Model reference
 
-This page documents the model aliases and provider wiring in the personal AI
-gateway, plus the live catalogs fetched from each provider.
+This page documents the live model catalog and provider wiring in the personal
+AI gateway, plus the live catalogs fetched from each provider.
 
-The canonical machine-readable source of truth for the gateway is
+The canonical machine-readable source of truth is
 `src/gateway.config.yaml`. After editing it, regenerate runtime configs:
 
 ```bash
-python3 src/scripts/generate_configs.py
+python3 src/scripts/gateway.py generate
 ```
 
-## Model contract
+## Model kinds
 
-The gateway exposes three levels of aliases:
+The gateway organizes models in five kinds. Each kind answers a different
+question about where a model id comes from and how it is routed.
 
-| Level | Examples | Use when |
-| --- | --- | --- |
-| Task alias | `explorer`, `planner`, `coder`, `coder-fast`, `vision` | A tool or orchestrator wants the gateway's recommended default for a job. |
-| Model-family alias | `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `kimi-k2.7-code`, `kimi-k2.6` | A caller wants an exact model family with provider fallback. |
-| Provider deployment alias | `deepseek-v4-pro-ollama`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` | A caller needs to force or debug one provider deployment with no fallback. |
+| Kind | Description |
+| --- | --- |
+| **Provider** | Reusable adapter and registry metadata. Declares the LiteLLM prefix, API base/key env vars, and the catalog of model ids that provider can serve. |
+| **Connection** | One configured local endpoint, account, or key for a provider. Has priority, stability, and concurrency knobs and selects which registry models it serves. |
+| **Combo** | Curated public model with fallback/scoring. A stable id (`explorer`, `planner`, `coder`, ...) that maps to ordered `(connection, model)` candidates and a scoring policy. Shares the `/v1/models` namespace with registry model ids. |
+| **Registry model** | A provider model id served by active connections. Examples: `kimi-k2.7-code`, `deepseek-v4-pro`, `glm-5.2`. The router resolves it to the best active deployment at request time. |
+| **Connection model** | Explicit qualified deployment id in the form `<connection>.<model>`, e.g. `ollama-local.kimi-k2.7-code`. Forces one connection with no combo/registry fallback. |
+| **Client** | Local harness setup target (`codex`, `claude-code`, `opencode`, `pi`). Used by the `gateway setup` CLI to render harness config from the live catalog. |
+
+### How a requested model is resolved
+
+1. The router resolves the requested model id to an ordered list of
+   deployments:
+   - **Combo** -> its candidate `(connection, model)` pairs, scored per the
+     combo's `scoring` weights (health, latency, quota, stability, connection
+     density, priority) and filtered to active connections.
+   - **Registry model** -> every active connection whose provider registry
+     lists that model id, ordered by the same scoring inputs.
+   - **Connection model** -> exactly the one named deployment.
+2. Deployments are tried in order. Fallback only happens on retryable upstream
+   failures (capacity, quota, billing, entitlement, missing-model,
+   context-limit, unsupported-parameter). Caller-side auth, virtual-key
+   budget, virtual-key model allowlist, and malformed-request errors do not
+   fall back.
+3. LiteLLM is an execution adapter: the router rewrites catalog ids to the
+   internal deployment id (e.g. `ollama-local.kimi-k2.7-code`) before calling
+   LiteLLM.
 
 `model_info.reasoning_level` is catalog metadata with values `none`, `low`,
-`medium`, or `high`. It is not translated into provider-specific request
-parameters by the router.
+`medium`, or `high`. It is guidance for humans and packages; the router does
+not translate it into provider-specific request parameters.
 
-Recommended orchestrator mapping:
+### Recommended orchestrator mapping
 
-| Orchestrator role | Gateway alias | Reasoning level |
+| Orchestrator role | Combo | Reasoning level |
 | --- | --- | --- |
 | Explore/search/simple work | `explorer` | `low` |
 | Plan/reason/analyze | `planner` | `high` |
@@ -34,13 +57,150 @@ Recommended orchestrator mapping:
 | Quick edits/commits | `coder-fast` | `low` |
 | Image input | `vision` | `medium` |
 
+The recommended default is to use combos first. Use a registry model when you
+want an exact model family with provider fallback. Use a connection model only
+when debugging or forcing one backend.
+
+## Response headers
+
+Successful chat responses include gateway routing headers:
+
+| Header | Meaning |
+| --- | --- |
+| `X-Gateway-Requested-Model` | The model id the caller requested. |
+| `X-Gateway-Model-Kind` | `combo`, `registry-model`, or `connection-model`. |
+| `X-Gateway-Served-Deployment` | The deployment id that actually served the response (e.g. `ollama-local.kimi-k2.7-code`). |
+| `X-Gateway-Fallback-Count` | Number of fallback hops (0 when no fallback). |
+| `X-Gateway-Attempted-Models` | Comma-separated deployment ids tried, in order. Empty when no fallback. |
+| `X-Gateway-Fallback-From` | First attempted deployment id, present only after a fallback. |
+
+LiteLLM cache headers such as `x-litellm-cache-hit` and `x-litellm-cache-key`
+are preserved when the upstream returns them.
+
 ## Provider wiring
+
+Providers live under `providers:` in `src/gateway.config.yaml`. Each provider
+declares its LiteLLM adapter prefix, API base/key env vars, optional drop
+params, and a `registry.models` map of the model ids it can serve.
 
 | Provider | LiteLLM prefix | API base env | API key env | Notes |
 | --- | --- | --- | --- | --- |
-| Ollama local/cloud | `ollama_chat/*` | `OLLAMA_API_BASE` | `OLLAMA_API_KEY` | Zero-cost, primary path for most aliases |
-| DeepSeek | `deepseek/*` | n/a | `DEEPSEEK_API_KEY` | Paid API fallback |
-| OpenCode Go | `openai/*` | `OPENCODE_GO_API_BASE` | `OPENCODE_GO_API_KEY` | OpenAI-compatible adapter; drops `reasoningSummary` |
+| `ollama` | `ollama_chat/*` | `OLLAMA_API_BASE` | `OLLAMA_API_KEY` | Zero-cost local/cloud; primary path for most models. |
+| `deepseek` | `deepseek/*` | n/a | `DEEPSEEK_API_KEY` | Paid API fallback. |
+| `opencode-go` | `openai/*` | `OPENCODE_GO_API_BASE` | `OPENCODE_GO_API_KEY` | OpenAI-compatible adapter; drops `reasoningSummary`. |
+
+To add a provider, add a new key under `providers:` with its adapter prefix,
+env vars, and `registry.models`, then add one or more `connections:` that
+enable it and run `python3 src/scripts/gateway.py generate`.
+
+## Connections
+
+Connections live under `connections:` in `src/gateway.config.yaml`. Each
+connection binds a provider to one endpoint/account/key and selects which
+registry models it serves.
+
+| Connection | Provider | Priority | Stability | Max concurrent | Models |
+| --- | --- | --- | --- | --- | --- |
+| `ollama-local` | `ollama` | 10 | 0.85 | 8 | all |
+| `deepseek-api` | `deepseek` | 30 | 0.90 | 20 | `deepseek-v4-flash`, `deepseek-v4-pro` |
+| `opencode-go` | `opencode-go` | 40 | 0.70 | 8 | all |
+
+To add a connection, add a key under `connections:` with `provider:`,
+`enabled:`, `priority:`, `stability:`, `max_concurrent:`, and `models:`
+(either `all` or a list of registry model ids), then regenerate.
+
+## Combos
+
+Combos live under `combos:` in `src/gateway.config.yaml`. Each combo is a
+curated public model id with ordered `(connection, model)` candidates and a
+scoring policy. Combos share the `/v1/models` namespace with registry model
+ids.
+
+| Combo | Task | Candidates (connection.model) |
+| --- | --- | --- |
+| `explorer` | explore | `ollama-local.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash`, `opencode-go.deepseek-v4-flash` |
+| `planner` | plan | `ollama-local.glm-5.2`, `opencode-go.glm-5.2`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` |
+| `coder` | build | `ollama-local.kimi-k2.7-code`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` |
+| `coder-fast` | quick-build | `ollama-local.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash`, `opencode-go.deepseek-v4-flash`, `opencode-go.kimi-k2.6` |
+| `vision` | vision | `ollama-local.kimi-k2.6`, `opencode-go.kimi-k2.6` |
+
+All combos use the same scoring weights:
+
+| Input | Weight |
+| --- | --- |
+| `health` | 0.30 |
+| `latency` | 0.20 |
+| `quota` | 0.15 |
+| `stability` | 0.15 |
+| `connection_density` | 0.10 |
+| `priority` | 0.10 |
+
+To add a combo, add a key under `combos:` with `task:`, `strategy: score`,
+`candidates:` (ordered list of `{connection, model}`), and `scoring:`, then
+regenerate.
+
+## Live catalog views
+
+`/v1/models` returns the live catalog filtered to active deployments. Pass
+`?view=` to select a slice:
+
+| View | Contents |
+| --- | --- |
+| `all` (default) | combos + registry models + connection models |
+| `combos` | combos only |
+| `registry` | registry models only |
+| `connections` | connection models only |
+
+## Clients
+
+Clients live under `clients:` in `src/gateway.config.yaml`. Each client is a
+local harness setup target with a default model, catalog view, and the config
+file paths the `gateway setup` CLI writes.
+
+| Client | Default model | Catalog | Config path |
+| --- | --- | --- | --- |
+| `codex` | `coder` | `all` | `~/.codex/config.toml`, `~/.codex/codex.toml` |
+| `claude-code` | `coder` | `all` | `~/.claude/settings.json` |
+| `opencode` | `coder` (small: `coder-fast`) | `all` | `~/.config/opencode/opencode.json` |
+| `pi` | `coder` | `all` | `~/.config/pi/settings.json` |
+
+## Cookbook
+
+```bash
+# Validate providers, connections, combos, and env vars
+python3 src/scripts/gateway.py doctor
+
+# Regenerate runtime configs from gateway.config.yaml
+python3 src/scripts/gateway.py generate
+
+# Print the live catalog
+python3 src/scripts/gateway.py models --view all
+python3 src/scripts/gateway.py models --view combos
+
+# Explain how a model id resolves to deployments
+python3 src/scripts/gateway.py explain kimi-k2.7-code
+
+# Preview and apply a client config
+python3 src/scripts/gateway.py setup codex --catalog all --dry-run
+python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply
+
+# Query the live catalog over HTTP
+curl "http://localhost:4100/v1/models?view=all" -H "Authorization: Bearer $VIRTUAL_KEY"
+```
+
+## Virtual key allowlists
+
+Because the router rewrites catalog ids to deployment ids before calling
+LiteLLM, LiteLLM virtual keys must allow the internal deployment ids they may
+use, such as `ollama-local.kimi-k2.7-code` and
+`deepseek-api.deepseek-v4-pro`.
+
+When a combo or registry model falls back, the served deployment may be any of
+its candidates, so the virtual key allowlist must include every deployment id
+the agent is allowed to use. Use `python3 src/scripts/gateway.py explain
+<model>` to list the candidate deployments for a combo or registry model, and
+include each allowed deployment id in the `models` list when creating the
+virtual key.
 
 ## Live provider catalogs
 
@@ -130,60 +290,9 @@ Endpoint: `https://opencode.ai/zen/go/v1/models`
 | `qwen3.7-plus` |
 
 OpenCode Go exposes all models under an OpenAI-compatible `/v1/models`
-endpoint. The gateway routes them with LiteLLM's `openai/*` provider prefix and
-adds `additional_drop_params: [reasoningSummary]` for the aliases that need it.
-
-## Active gateway model aliases
-
-| Alias | Alias level | Reasoning level | Target/provider model | Timeout (s) | Fallbacks |
-| --- | --- | --- | --- | --- | --- |
-| `deepseek-v4-flash-ollama` | provider-deployment | low | `ollama_chat/deepseek-v4-flash` | 60 | — |
-| `deepseek-v4-flash-deepseek` | provider-deployment | low | `deepseek/deepseek-v4-flash` | 60 | — |
-| `deepseek-v4-flash-opencodego` | provider-deployment | low | `openai/deepseek-v4-flash` | 60 | — |
-| `glm-5.2-ollama` | provider-deployment | high | `ollama_chat/glm-5.2` | 120 | — |
-| `glm-5.2-opencodego` | provider-deployment | high | `openai/glm-5.2` | 120 | — |
-| `kimi-k2.7-code-ollama` | provider-deployment | medium | `ollama_chat/kimi-k2.7-code` | 120 | — |
-| `kimi-k2.7-code-opencodego` | provider-deployment | medium | `openai/kimi-k2.7-code` | 120 | — |
-| `deepseek-v4-pro-ollama` | provider-deployment | high | `ollama_chat/deepseek-v4-pro` | 120 | — |
-| `deepseek-v4-pro-deepseek` | provider-deployment | high | `deepseek/deepseek-v4-pro` | 120 | — |
-| `kimi-k2.6-ollama` | provider-deployment | low | `ollama_chat/kimi-k2.6` | 60 | — |
-| `kimi-k2.6-opencodego` | provider-deployment | low | `openai/kimi-k2.6` | 120 | — |
-| `deepseek-v4-flash` | model-family | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego` |
-| `glm-5.2` | model-family | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `kimi-k2.7-code-opencodego` |
-| `kimi-k2.7-code` | model-family | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro-deepseek` |
-| `deepseek-v4-pro` | model-family | high | `ollama_chat/deepseek-v4-pro` | 120 | `deepseek-v4-pro-deepseek` |
-| `kimi-k2.6` | model-family | low | `ollama_chat/kimi-k2.6` | 60 | `kimi-k2.6-opencodego` |
-| `explorer` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego` |
-| `planner` | task-alias | high | `ollama_chat/glm-5.2` | 120 | `glm-5.2-opencodego`, `deepseek-v4-pro-deepseek`, `kimi-k2.7-code-opencodego` |
-| `coder` | task-alias | medium | `ollama_chat/kimi-k2.7-code` | 120 | `kimi-k2.7-code-opencodego`, `deepseek-v4-pro-deepseek` |
-| `coder-fast` | task-alias | low | `ollama_chat/deepseek-v4-flash` | 60 | `deepseek-v4-flash-deepseek`, `deepseek-v4-flash-opencodego`, `kimi-k2.6-opencodego` |
-| `vision` | task-alias | medium | `ollama_chat/kimi-k2.6` | 120 | `kimi-k2.6-opencodego` |
-
-## Fallback chains
-
-```text
-explorer
-  -> deepseek-v4-flash-deepseek
-  -> deepseek-v4-flash-opencodego
-
-planner
-  -> glm-5.2-opencodego
-  -> deepseek-v4-pro-deepseek
-  -> kimi-k2.7-code-opencodego
-
-coder
-  -> kimi-k2.7-code-opencodego
-  -> deepseek-v4-pro-deepseek
-
-coder-fast
-  -> deepseek-v4-flash-deepseek
-  -> deepseek-v4-flash-opencodego
-  -> kimi-k2.6-opencodego
-
-vision
-  -> kimi-k2.6-opencodego
-
-```
+endpoint. The gateway routes them with LiteLLM's `openai/*` provider prefix
+and adds `additional_drop_params: [reasoningSummary]` for the connections that
+need it.
 
 ## Runtime configuration
 
@@ -193,6 +302,7 @@ vision
 | Cache TTL | 600 seconds | `router.cache_ttl_seconds` |
 | Retry base delay | 0.2 seconds | `router.retry_base_delay` |
 | Retry max delay | 2.0 seconds | `router.retry_max_delay` |
+| Quota cooldown | 300 seconds | `router.quota_cooldown_seconds` |
 | Request timeout | 120 seconds | `litellm.settings.request_timeout` |
 | Retries | 3 | `litellm.settings.num_retries` |
 | Drop unknown params | `true` | `litellm.settings.drop_params` |
@@ -202,19 +312,21 @@ vision
 
 | Variable | Required by | Purpose |
 | --- | --- | --- |
-| `OLLAMA_API_BASE` | All `ollama_chat/*` aliases | Ollama endpoint URL |
-| `OLLAMA_API_KEY` | All `ollama_chat/*` aliases | Ollama API key (may be empty for local) |
-| `DEEPSEEK_API_KEY` | `deepseek-v4-flash-deepseek`, `deepseek-v4-pro-deepseek` | DeepSeek API key |
-| `OPENCODE_GO_API_BASE` | All `openai/*` aliases | OpenCode Go base URL |
-| `OPENCODE_GO_API_KEY` | All `openai/*` aliases | OpenCode Go API key |
+| `OLLAMA_API_BASE` | All `ollama-local.*` deployments | Ollama endpoint URL |
+| `OLLAMA_API_KEY` | All `ollama-local.*` deployments | Ollama API key (may be empty for local) |
+| `DEEPSEEK_API_KEY` | `deepseek-api.*` deployments | DeepSeek API key |
+| `OPENCODE_GO_API_BASE` | All `opencode-go.*` deployments | OpenCode Go base URL |
+| `OPENCODE_GO_API_KEY` | All `opencode-go.*` deployments | OpenCode Go API key |
+| `VIRTUAL_KEY` | `gateway setup` CLI | Default LiteLLM virtual key written into client configs |
 
 ## OpenCode integration
 
-Run `python3 src/scripts/gateway.py setup opencode --mode local-plugin --catalog all --apply` to update the
-`provider.gateway.models` block in `~/.config/opencode/opencode.json` from the
-current gateway catalog. The generator preserves manually added per-model options
-while adding new aliases and refreshing generated display names. Use
-`--dry-run` to preview without writing.
+Run `python3 src/scripts/gateway.py setup opencode --mode local-plugin
+--catalog all --apply` to sync the gateway catalog into
+`~/.config/opencode/opencode.json`. The default `local-plugin` mode installs a
+first-party plugin that fetches the live catalog from `/v1/models?view=<catalog>`
+at startup; `static` mode writes a snapshot of the current catalog into
+`provider.gateway.models`. Use `--dry-run` to preview without writing.
 
 ## Updating this page
 

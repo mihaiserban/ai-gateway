@@ -1,5 +1,12 @@
 # Personal Cache-Aware AI Gateway Plan
 
+> **Historical note (2026-07):** This plan describes the original alias-first
+> design. The gateway has since been rebuilt around a live model catalog with
+> providers, connections, and combos; see [docs/models.md](models.md) and
+> [README.md](../README.md) for the current architecture. The routing policy,
+> fallback chains, and alias tables below are retained as design history and
+> do not reflect the current `src/gateway.config.yaml` shape.
+
 A lightweight AI gateway for one person and their local agents, runnable as a
 Docker stack on a NAS. The goal is the Coinbase pattern scaled down: one
 OpenAI-compatible endpoint, cheaper defaults, Redis-backed caching, sticky

@@ -123,10 +123,7 @@ class ClientEntry:
     config_format: str  # "json" | "toml"
     setup_modes: tuple[str, ...]
     default_setup_mode: str
-    supports_catalog_snapshot: bool
-    supports_dynamic_catalog: bool
     supports_env_api_key_ref: bool
-    base_url_suffix: str  # "" | "/v1"
     doctor_checks: tuple[str, ...]
 
 
@@ -138,10 +135,7 @@ CLIENTS: dict[str, ClientEntry] = {
         config_format="json",
         setup_modes=("local-plugin", "static"),
         default_setup_mode="local-plugin",
-        supports_catalog_snapshot=True,
-        supports_dynamic_catalog=True,
         supports_env_api_key_ref=True,
-        base_url_suffix="/v1",
         doctor_checks=("config", "plugin"),
     ),
     "pi": ClientEntry(
@@ -151,10 +145,7 @@ CLIENTS: dict[str, ClientEntry] = {
         config_format="json",
         setup_modes=("static",),
         default_setup_mode="static",
-        supports_catalog_snapshot=True,
-        supports_dynamic_catalog=False,
         supports_env_api_key_ref=False,
-        base_url_suffix="/v1",
         doctor_checks=("config",),
     ),
     "codex": ClientEntry(
@@ -164,10 +155,7 @@ CLIENTS: dict[str, ClientEntry] = {
         config_format="toml",
         setup_modes=("static",),
         default_setup_mode="static",
-        supports_catalog_snapshot=True,
-        supports_dynamic_catalog=False,
         supports_env_api_key_ref=False,
-        base_url_suffix="/v1",
         doctor_checks=("config",),
     ),
     "claude-code": ClientEntry(
@@ -177,10 +165,7 @@ CLIENTS: dict[str, ClientEntry] = {
         config_format="json",
         setup_modes=("static",),
         default_setup_mode="static",
-        supports_catalog_snapshot=False,
-        supports_dynamic_catalog=False,
         supports_env_api_key_ref=True,
-        base_url_suffix="",
         doctor_checks=("config",),
     ),
 }
