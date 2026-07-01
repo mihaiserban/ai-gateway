@@ -1,14 +1,249 @@
 # Human-edited source of truth for the personal AI gateway.
 # Run `python3 src/scripts/generate_configs.py` after editing this file.
+#
+# Shape (Task 1 of the provider-connections rebuild):
+#   router      -> gateway runtime knobs (default model, cache, retry, quota)
+#   providers   -> adapter + registry of model metadata, keyed by provider id
+#   connections -> enabled/disabled upstream groups keyed by connection id
+#   combos      -> curated public models keyed by combo id (share /v1/models namespace with registry model ids)
+#   clients     -> downstream client setup targets (used by Task 5)
+#   litellm     -> LiteLLM runtime settings/cache/general/logging (kept for Task 2 generator)
 
 router:
-  cache_ttl_seconds: 600
   default_model: coder
+  cache_ttl_seconds: 600
   retry_base_delay: 0.2
   retry_max_delay: 2.0
-  max_concurrent_upstream: 50
-  # Providers that support prompt_cache_key: openai, deepseek, anthropic; not ollama.
-  cache_key_aliases: []
+  quota_cooldown_seconds: 300
+
+providers:
+  ollama:
+    adapter: litellm
+    litellm_model_prefix: ollama_chat
+    api_base_env: OLLAMA_API_BASE
+    api_key_env: OLLAMA_API_KEY
+    registry:
+      models:
+        deepseek-v4-flash:
+          display_name: DeepSeek V4 Flash
+          capabilities: [chat, coding, fast]
+          context_length: 128000
+        glm-5.2:
+          display_name: GLM 5.2
+          capabilities: [chat, coding, reasoning]
+          context_length: 128000
+        kimi-k2.7-code:
+          display_name: Kimi K2.7 Code
+          capabilities: [chat, coding]
+          context_length: 128000
+        deepseek-v4-pro:
+          display_name: DeepSeek V4 Pro
+          capabilities: [chat, coding, reasoning]
+          context_length: 128000
+        kimi-k2.6:
+          display_name: Kimi K2.6
+          capabilities: [chat, coding, fast]
+          context_length: 128000
+
+  deepseek:
+    adapter: litellm
+    litellm_model_prefix: deepseek
+    api_key_env: DEEPSEEK_API_KEY
+    registry:
+      models:
+        deepseek-v4-flash:
+          display_name: DeepSeek V4 Flash
+          capabilities: [chat, coding, fast]
+          context_length: 128000
+          pricing:
+            input_cost_per_token: 0.00000014
+            output_cost_per_token: 0.00000028
+        deepseek-v4-pro:
+          display_name: DeepSeek V4 Pro
+          capabilities: [chat, coding, reasoning]
+          context_length: 128000
+          pricing:
+            input_cost_per_token: 0.00000028
+            output_cost_per_token: 0.00000056
+
+  opencode-go:
+    adapter: litellm
+    litellm_model_prefix: openai
+    api_base_env: OPENCODE_GO_API_BASE
+    api_key_env: OPENCODE_GO_API_KEY
+    drop_params:
+      - reasoningSummary
+    registry:
+      models:
+        deepseek-v4-flash:
+          display_name: DeepSeek V4 Flash
+          capabilities: [chat, coding, fast]
+          context_length: 128000
+        glm-5.2:
+          display_name: GLM 5.2
+          capabilities: [chat, coding, reasoning]
+          context_length: 128000
+        kimi-k2.7-code:
+          display_name: Kimi K2.7 Code
+          capabilities: [chat, coding]
+          context_length: 128000
+        kimi-k2.6:
+          display_name: Kimi K2.6
+          capabilities: [chat, coding, fast]
+          context_length: 128000
+
+connections:
+  ollama-local:
+    provider: ollama
+    enabled: true
+    priority: 10
+    stability: 0.85
+    max_concurrent: 8
+    models: all
+
+  deepseek-api:
+    provider: deepseek
+    enabled: true
+    priority: 30
+    stability: 0.9
+    max_concurrent: 20
+    models:
+      - deepseek-v4-flash
+      - deepseek-v4-pro
+
+  opencode-go:
+    provider: opencode-go
+    enabled: true
+    priority: 40
+    stability: 0.7
+    max_concurrent: 8
+    models: all
+
+combos:
+  explorer:
+    task: explore
+    strategy: score
+    candidates:
+      - connection: ollama-local
+        model: deepseek-v4-flash
+      - connection: deepseek-api
+        model: deepseek-v4-flash
+      - connection: opencode-go
+        model: deepseek-v4-flash
+    scoring:
+      health: 0.30
+      latency: 0.20
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.10
+      priority: 0.10
+
+  planner:
+    task: plan
+    strategy: score
+    candidates:
+      - connection: ollama-local
+        model: glm-5.2
+      - connection: opencode-go
+        model: glm-5.2
+      - connection: deepseek-api
+        model: deepseek-v4-pro
+      - connection: opencode-go
+        model: kimi-k2.7-code
+    scoring:
+      health: 0.30
+      latency: 0.20
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.10
+      priority: 0.10
+
+  coder:
+    task: build
+    strategy: score
+    candidates:
+      - connection: ollama-local
+        model: kimi-k2.7-code
+      - connection: deepseek-api
+        model: deepseek-v4-pro
+      - connection: opencode-go
+        model: kimi-k2.7-code
+    scoring:
+      health: 0.30
+      latency: 0.20
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.10
+      priority: 0.10
+
+  coder-fast:
+    task: quick-build
+    strategy: score
+    candidates:
+      - connection: ollama-local
+        model: deepseek-v4-flash
+      - connection: deepseek-api
+        model: deepseek-v4-flash
+      - connection: opencode-go
+        model: deepseek-v4-flash
+      - connection: opencode-go
+        model: kimi-k2.6
+    scoring:
+      health: 0.30
+      latency: 0.20
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.10
+      priority: 0.10
+
+  vision:
+    task: vision
+    strategy: score
+    candidates:
+      - connection: ollama-local
+        model: kimi-k2.6
+      - connection: opencode-go
+        model: kimi-k2.6
+    scoring:
+      health: 0.30
+      latency: 0.20
+      quota: 0.15
+      stability: 0.15
+      connection_density: 0.10
+      priority: 0.10
+
+clients:
+  base_url: http://localhost:4100/v1
+  api_key_env: VIRTUAL_KEY
+  default_model: coder
+  default_catalog: all
+  targets:
+    codex:
+      model: coder
+      catalog: all
+      paths:
+        - ~/.codex/config.toml
+        - ~/.codex/codex.toml
+    claude-code:
+      model: coder
+      catalog: all
+      paths:
+        - ~/.claude/settings.json
+    opencode:
+      model: coder
+      small_model: coder-fast
+      catalog: all
+      mode: local-plugin
+      provider_id: gateway
+      plugin_dir: ~/.config/opencode/plugins/agent-ai-gateway
+      model_cache_ttl_ms: 300000
+      paths:
+        - ~/.config/opencode/opencode.json
+    pi:
+      model: coder
+      catalog: all
+      paths:
+        - ~/.config/pi/settings.json
 
 litellm:
   settings:
@@ -25,263 +260,3 @@ litellm:
   logging:
     callbacks:
       - custom_logger.ProviderModelLogger
-
-models:
-  - name: deepseek-v4-flash-ollama
-    litellm_model: ollama_chat/deepseek-v4-flash
-    api_base_env: OLLAMA_API_BASE
-    api_key_env: OLLAMA_API_KEY
-    timeout: 60
-    model_info:
-      role: provider-deployment
-      family: deepseek-v4-flash
-      provider: ollama
-      reasoning_level: low
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: deepseek-v4-flash-deepseek
-    litellm_model: deepseek/deepseek-v4-flash
-    api_key_env: DEEPSEEK_API_KEY
-    timeout: 60
-    model_info:
-      role: provider-deployment
-      family: deepseek-v4-flash
-      provider: deepseek
-      reasoning_level: low
-      input_cost_per_token: 0.00000014
-      output_cost_per_token: 0.00000028
-
-  - name: deepseek-v4-flash-opencodego
-    litellm_model: openai/deepseek-v4-flash
-    api_base_env: OPENCODE_GO_API_BASE
-    api_key_env: OPENCODE_GO_API_KEY
-    timeout: 60
-    additional_drop_params:
-      - reasoningSummary
-    model_info:
-      role: provider-deployment
-      family: deepseek-v4-flash
-      provider: opencodego
-      reasoning_level: low
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: glm-5.2-ollama
-    litellm_model: ollama_chat/glm-5.2
-    api_base_env: OLLAMA_API_BASE
-    api_key_env: OLLAMA_API_KEY
-    timeout: 120
-    model_info:
-      role: provider-deployment
-      family: glm-5.2
-      provider: ollama
-      reasoning_level: high
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: glm-5.2-opencodego
-    litellm_model: openai/glm-5.2
-    api_base_env: OPENCODE_GO_API_BASE
-    api_key_env: OPENCODE_GO_API_KEY
-    timeout: 120
-    additional_drop_params:
-      - reasoningSummary
-    model_info:
-      role: provider-deployment
-      family: glm-5.2
-      provider: opencodego
-      reasoning_level: high
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: kimi-k2.7-code-ollama
-    litellm_model: ollama_chat/kimi-k2.7-code
-    api_base_env: OLLAMA_API_BASE
-    api_key_env: OLLAMA_API_KEY
-    timeout: 120
-    model_info:
-      role: provider-deployment
-      family: kimi-k2.7-code
-      provider: ollama
-      reasoning_level: medium
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: kimi-k2.7-code-opencodego
-    litellm_model: openai/kimi-k2.7-code
-    api_base_env: OPENCODE_GO_API_BASE
-    api_key_env: OPENCODE_GO_API_KEY
-    timeout: 120
-    additional_drop_params:
-      - reasoningSummary
-    model_info:
-      role: provider-deployment
-      family: kimi-k2.7-code
-      provider: opencodego
-      reasoning_level: medium
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: deepseek-v4-pro-ollama
-    litellm_model: ollama_chat/deepseek-v4-pro
-    api_base_env: OLLAMA_API_BASE
-    api_key_env: OLLAMA_API_KEY
-    timeout: 120
-    model_info:
-      role: provider-deployment
-      family: deepseek-v4-pro
-      provider: ollama
-      reasoning_level: high
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: deepseek-v4-pro-deepseek
-    litellm_model: deepseek/deepseek-v4-pro
-    api_key_env: DEEPSEEK_API_KEY
-    timeout: 120
-    model_info:
-      role: provider-deployment
-      family: deepseek-v4-pro
-      provider: deepseek
-      reasoning_level: high
-      input_cost_per_token: 0.00000028
-      output_cost_per_token: 0.00000056
-
-  - name: kimi-k2.6-ollama
-    litellm_model: ollama_chat/kimi-k2.6
-    api_base_env: OLLAMA_API_BASE
-    api_key_env: OLLAMA_API_KEY
-    timeout: 60
-    model_info:
-      role: provider-deployment
-      family: kimi-k2.6
-      provider: ollama
-      reasoning_level: low
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-  - name: kimi-k2.6-opencodego
-    litellm_model: openai/kimi-k2.6
-    api_base_env: OPENCODE_GO_API_BASE
-    api_key_env: OPENCODE_GO_API_KEY
-    timeout: 120
-    additional_drop_params:
-      - reasoningSummary
-    model_info:
-      role: provider-deployment
-      family: kimi-k2.6
-      provider: opencodego
-      reasoning_level: low
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-
-aliases:
-  - name: deepseek-v4-flash
-    target: deepseek-v4-flash-ollama
-    timeout: 60
-    fallbacks:
-      - deepseek-v4-flash-deepseek
-      - deepseek-v4-flash-opencodego
-    model_info:
-      role: model-family
-      family: deepseek-v4-flash
-      reasoning_level: low
-
-  - name: glm-5.2
-    target: glm-5.2-ollama
-    timeout: 120
-    fallbacks:
-      - glm-5.2-opencodego
-      - kimi-k2.7-code-opencodego
-    model_info:
-      role: model-family
-      family: glm-5.2
-      reasoning_level: high
-
-  - name: kimi-k2.7-code
-    target: kimi-k2.7-code-ollama
-    timeout: 120
-    fallbacks:
-      - kimi-k2.7-code-opencodego
-      - deepseek-v4-pro-deepseek
-    model_info:
-      role: model-family
-      family: kimi-k2.7-code
-      reasoning_level: medium
-
-  - name: deepseek-v4-pro
-    target: deepseek-v4-pro-ollama
-    timeout: 120
-    fallbacks:
-      - deepseek-v4-pro-deepseek
-    model_info:
-      role: model-family
-      family: deepseek-v4-pro
-      reasoning_level: high
-
-  - name: kimi-k2.6
-    target: kimi-k2.6-ollama
-    timeout: 60
-    fallbacks:
-      - kimi-k2.6-opencodego
-    model_info:
-      role: model-family
-      family: kimi-k2.6
-      reasoning_level: low
-
-  - name: explorer
-    target: deepseek-v4-flash
-    timeout: 60
-    fallbacks:
-      - deepseek-v4-flash-deepseek
-      - deepseek-v4-flash-opencodego
-    model_info:
-      role: task-alias
-      task: explore
-      reasoning_level: low
-
-  - name: planner
-    target: glm-5.2
-    timeout: 120
-    fallbacks:
-      - glm-5.2-opencodego
-      - deepseek-v4-pro-deepseek
-      - kimi-k2.7-code-opencodego
-    model_info:
-      role: task-alias
-      task: plan
-      reasoning_level: high
-
-  - name: coder
-    target: kimi-k2.7-code
-    timeout: 120
-    fallbacks:
-      - kimi-k2.7-code-opencodego
-      - deepseek-v4-pro-deepseek
-    model_info:
-      role: task-alias
-      task: build
-      reasoning_level: medium
-
-  - name: coder-fast
-    target: deepseek-v4-flash
-    timeout: 60
-    fallbacks:
-      - deepseek-v4-flash-deepseek
-      - deepseek-v4-flash-opencodego
-      - kimi-k2.6-opencodego
-    model_info:
-      role: task-alias
-      task: quick-build
-      reasoning_level: low
-
-  - name: vision
-    target: kimi-k2.6
-    timeout: 120
-    fallbacks:
-      - kimi-k2.6-opencodego
-    model_info:
-      role: task-alias
-      task: vision
-      reasoning_level: medium
