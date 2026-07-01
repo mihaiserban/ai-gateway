@@ -3,20 +3,56 @@ import pytest
 SIMPLE_ROUTE_CONFIG = """
 cache_ttl_seconds: 600
 default_model: coder
-allowed_models:
-  - coder
-  - explorer
-  - planner
-fallbacks:
+catalog:
+  default_view: all
+combos:
   coder:
-    - explorer
-    - planner
-  explorer:
-    - planner
-provider_models:
-  coder: provider/coder-model
-  explorer: provider/explorer-model
-  planner: provider/planner-model
+    strategy: score
+    task: build
+    candidates:
+      - ollama-local.kimi-k2.7-code
+      - deepseek-api.deepseek-v4-pro
+      - opencode-go.kimi-k2.7-code
+deployments:
+  ollama-local.kimi-k2.7-code:
+    provider: ollama
+    connection: ollama-local
+    model: kimi-k2.7-code
+    required_env:
+      - OLLAMA_API_BASE
+      - OLLAMA_API_KEY
+    capabilities:
+      - chat
+      - coding
+    context_length: 128000
+  deepseek-api.deepseek-v4-pro:
+    provider: deepseek
+    connection: deepseek-api
+    model: deepseek-v4-pro
+    required_env:
+      - DEEPSEEK_API_KEY
+    capabilities:
+      - chat
+      - coding
+      - reasoning
+    context_length: 128000
+  opencode-go.kimi-k2.7-code:
+    provider: opencode-go
+    connection: opencode-go
+    model: kimi-k2.7-code
+    required_env:
+      - OPENCODE_GO_API_BASE
+      - OPENCODE_GO_API_KEY
+    capabilities:
+      - chat
+      - coding
+    context_length: 128000
+registry_models:
+  kimi-k2.7-code:
+    - ollama-local.kimi-k2.7-code
+    - opencode-go.kimi-k2.7-code
+  deepseek-v4-pro:
+    - deepseek-api.deepseek-v4-pro
 """.lstrip()
 
 

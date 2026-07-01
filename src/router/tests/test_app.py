@@ -18,18 +18,21 @@ async def test_healthz_reports_router_ok(simple_route_config_path: str):
 
 
 @pytest.mark.asyncio
-async def test_models_proxies_to_litellm(simple_route_config_path: str):
-    seen = {}
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        return httpx.Response(200, json={"data": [{"id": "explorer"}]})
-
-    transport = httpx.MockTransport(handler)
+async def test_models_returns_live_catalog_combos_registry_and_connections(
+    simple_route_config_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
     app = create_app(
         litellm_base_url="http://litellm:4000",
         redis_url=None,
-        transport=transport,
         config_path=simple_route_config_path,
     )
 
@@ -37,8 +40,54 @@ async def test_models_proxies_to_litellm(simple_route_config_path: str):
         response = await client.get("/v1/models", headers={"Authorization": "Bearer test"})
 
     assert response.status_code == 200
-    assert response.json()["data"][0]["id"] == "explorer"
-    assert seen["url"] == "http://litellm:4000/v1/models"
+    ids = [item["id"] for item in response.json()["data"]]
+    assert "coder" in ids
+    assert "kimi-k2.7-code" in ids
+    assert "ollama-local.kimi-k2.7-code" in ids
+
+
+@pytest.mark.asyncio
+async def test_models_filtered_view_combos_hides_connections(
+    simple_route_config_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        config_path=simple_route_config_path,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/models?view=combos", headers={"Authorization": "Bearer test"})
+
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()["data"]]
+    assert "coder" in ids
+    assert "ollama-local.kimi-k2.7-code" not in ids
+
+
+@pytest.mark.asyncio
+async def test_models_unknown_view_returns_400(simple_route_config_path: str):
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        config_path=simple_route_config_path,
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/models?view=bad", headers={"Authorization": "Bearer test"})
+
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["type"] == "gateway_catalog_view_invalid"
+    assert error["view"] == "bad"
+    assert error["message"] == "Unknown catalog view 'bad'. Use all, combos, registry, or connections."
 
 
 @pytest.mark.asyncio

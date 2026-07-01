@@ -35,22 +35,37 @@ async def test_openai_chat_compat_preserves_auth_content_type_and_gateway_header
 
 
 @pytest.mark.asyncio
-async def test_models_compat_preserves_auth_and_response_body():
-    seen = {}
+async def test_models_compat_returns_live_gateway_catalog(
+    simple_route_config_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    for key, value in {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "DEEPSEEK_API_KEY": "x",
+    }.items():
+        monkeypatch.setenv(key, value)
 
-    async def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["authorization"] = request.headers.get("authorization")
-        return httpx.Response(200, json={"object": "list", "data": [{"id": "coder", "object": "model"}]})
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("live catalog must not proxy to LiteLLM")
 
-    app = create_app(litellm_base_url="http://litellm:4000", redis_url=None, transport=httpx.MockTransport(handler))
+    app = create_app(
+        litellm_base_url="http://litellm:4000",
+        redis_url=None,
+        config_path=simple_route_config_path,
+        transport=httpx.MockTransport(handler),
+    )
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/models", headers={"Authorization": "Bearer virtual-key"})
 
     assert response.status_code == 200
-    assert seen == {"url": "http://litellm:4000/v1/models", "authorization": "Bearer virtual-key"}
-    assert response.json() == {"object": "list", "data": [{"id": "coder", "object": "model"}]}
+    body = response.json()
+    assert body["object"] == "list"
+    ids = [item["id"] for item in body["data"]]
+    assert "coder" in ids
+    assert "kimi-k2.7-code" in ids
+    assert "ollama-local.kimi-k2.7-code" in ids
 
 
 @pytest.mark.asyncio

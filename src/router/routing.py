@@ -23,6 +23,11 @@ class DeploymentRuntime:
     connection: str
     model: str
     required_env: tuple[str, ...] = ()
+    display_name: str | None = None
+    capabilities: tuple[str, ...] = ()
+    context_length: int | None = None
+    input_cost_per_token: float | None = None
+    output_cost_per_token: float | None = None
 
 
 @dataclass(frozen=True)

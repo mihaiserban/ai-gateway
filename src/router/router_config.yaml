@@ -48,6 +48,12 @@ deployments:
     required_env:
     - OLLAMA_API_BASE
     - OLLAMA_API_KEY
+    display_name: DeepSeek V4 Flash
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
   ollama-local.glm-5.2:
     provider: ollama
     connection: ollama-local
@@ -55,6 +61,12 @@ deployments:
     required_env:
     - OLLAMA_API_BASE
     - OLLAMA_API_KEY
+    display_name: GLM 5.2
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
   ollama-local.kimi-k2.7-code:
     provider: ollama
     connection: ollama-local
@@ -62,6 +74,11 @@ deployments:
     required_env:
     - OLLAMA_API_BASE
     - OLLAMA_API_KEY
+    display_name: Kimi K2.7 Code
+    capabilities:
+    - chat
+    - coding
+    context_length: 128000
   ollama-local.deepseek-v4-pro:
     provider: ollama
     connection: ollama-local
@@ -69,6 +86,12 @@ deployments:
     required_env:
     - OLLAMA_API_BASE
     - OLLAMA_API_KEY
+    display_name: DeepSeek V4 Pro
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
   ollama-local.kimi-k2.6:
     provider: ollama
     connection: ollama-local
@@ -76,18 +99,40 @@ deployments:
     required_env:
     - OLLAMA_API_BASE
     - OLLAMA_API_KEY
+    display_name: Kimi K2.6
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
   deepseek-api.deepseek-v4-flash:
     provider: deepseek
     connection: deepseek-api
     model: deepseek-v4-flash
     required_env:
     - DEEPSEEK_API_KEY
+    display_name: DeepSeek V4 Flash
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
+    input_cost_per_token: 1.4e-07
+    output_cost_per_token: 2.8e-07
   deepseek-api.deepseek-v4-pro:
     provider: deepseek
     connection: deepseek-api
     model: deepseek-v4-pro
     required_env:
     - DEEPSEEK_API_KEY
+    display_name: DeepSeek V4 Pro
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
+    input_cost_per_token: 2.8e-07
+    output_cost_per_token: 5.6e-07
   opencode-go.deepseek-v4-flash:
     provider: opencode-go
     connection: opencode-go
@@ -95,6 +140,12 @@ deployments:
     required_env:
     - OPENCODE_GO_API_BASE
     - OPENCODE_GO_API_KEY
+    display_name: DeepSeek V4 Flash
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
   opencode-go.glm-5.2:
     provider: opencode-go
     connection: opencode-go
@@ -102,6 +153,12 @@ deployments:
     required_env:
     - OPENCODE_GO_API_BASE
     - OPENCODE_GO_API_KEY
+    display_name: GLM 5.2
+    capabilities:
+    - chat
+    - coding
+    - reasoning
+    context_length: 128000
   opencode-go.kimi-k2.7-code:
     provider: opencode-go
     connection: opencode-go
@@ -109,6 +166,11 @@ deployments:
     required_env:
     - OPENCODE_GO_API_BASE
     - OPENCODE_GO_API_KEY
+    display_name: Kimi K2.7 Code
+    capabilities:
+    - chat
+    - coding
+    context_length: 128000
   opencode-go.kimi-k2.6:
     provider: opencode-go
     connection: opencode-go
@@ -116,6 +178,12 @@ deployments:
     required_env:
     - OPENCODE_GO_API_BASE
     - OPENCODE_GO_API_KEY
+    display_name: Kimi K2.6
+    capabilities:
+    - chat
+    - coding
+    - fast
+    context_length: 128000
 registry_models:
   deepseek-v4-flash:
   - ollama-local.deepseek-v4-flash

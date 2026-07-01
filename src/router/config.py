@@ -86,13 +86,36 @@ def _load_deployments(raw: dict[str, Any]) -> dict[str, DeploymentRuntime]:
             continue
         required_env_raw = body.get("required_env") or []
         required_env = tuple(str(e) for e in required_env_raw) if isinstance(required_env_raw, list) else ()
+        display_name = body.get("display_name")
+        if not isinstance(display_name, str):
+            display_name = None
+        capabilities_raw = body.get("capabilities") or []
+        capabilities = tuple(str(c) for c in capabilities_raw) if isinstance(capabilities_raw, list) else ()
+        context_length_raw = body.get("context_length")
+        if isinstance(context_length_raw, int) and not isinstance(context_length_raw, bool):
+            context_length: int | None = context_length_raw
+        else:
+            context_length = None
+        input_cost = _optional_float(body.get("input_cost_per_token"))
+        output_cost = _optional_float(body.get("output_cost_per_token"))
         deployments[deployment_id] = DeploymentRuntime(
             provider=str(body.get("provider", "")),
             connection=str(body.get("connection", "")),
             model=str(body.get("model", "")),
             required_env=required_env,
+            display_name=display_name,
+            capabilities=capabilities,
+            context_length=context_length,
+            input_cost_per_token=input_cost,
+            output_cost_per_token=output_cost,
         )
     return deployments
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
 
 
 def _load_registry_models(raw: dict[str, Any]) -> dict[str, list[str]]:

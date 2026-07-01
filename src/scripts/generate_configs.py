@@ -79,12 +79,23 @@ def _render_deployments(catalog: GatewayCatalog) -> dict[str, Any]:
     rendered: dict[str, Any] = {}
     for deployment_id, deployment in catalog.deployments.items():
         required_env = _required_env_for(deployment.api_base_env, deployment.api_key_env)
-        rendered[deployment_id] = {
+        entry: dict[str, Any] = {
             "provider": deployment.provider_id,
             "connection": deployment.connection_id,
             "model": deployment.model_id,
             "required_env": required_env,
         }
+        if deployment.display_name is not None:
+            entry["display_name"] = deployment.display_name
+        if deployment.capabilities:
+            entry["capabilities"] = list(deployment.capabilities)
+        if deployment.context_length is not None:
+            entry["context_length"] = deployment.context_length
+        if deployment.input_cost_per_token is not None:
+            entry["input_cost_per_token"] = deployment.input_cost_per_token
+        if deployment.output_cost_per_token is not None:
+            entry["output_cost_per_token"] = deployment.output_cost_per_token
+        rendered[deployment_id] = entry
     return rendered
 
 

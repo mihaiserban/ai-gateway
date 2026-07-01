@@ -60,6 +60,7 @@ def parse_days(value: str | None) -> int:
 async def live_payload(app_state: Any, health: dict[str, str], readiness: dict[str, str]) -> dict[str, Any]:
     config = app_state.route_config
     redis_stats = await app_state.redis_stats_collector.snapshot()
+    catalog = _catalog_summary(config)
     return {
         "health": health,
         "readiness": readiness,
@@ -67,10 +68,19 @@ async def live_payload(app_state: Any, health: dict[str, str], readiness: dict[s
         "redis": redis_stats,
         "config": {
             "default_model": config.default_model,
-            "allowed_models": sorted(config.allowed_models),
-            "fallbacks": {key: list(value) for key, value in sorted(config.fallbacks.items())},
-            "provider_models": dict(sorted(config.provider_models.items())),
+            "combos": sorted(config.combos),
+            "registry_models": sorted(config.registry_models),
+            "deployments": sorted(config.deployments),
         },
+        "catalog": {"counts": catalog},
+    }
+
+
+def _catalog_summary(config: Any) -> dict[str, int]:
+    return {
+        "combos": len(config.combos),
+        "registry_models": len(config.registry_models),
+        "connection_models": len(config.deployments),
     }
 
 

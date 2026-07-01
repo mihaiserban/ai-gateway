@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from router.config import load_and_validate
 from router.dashboard import register_dashboard
 from router.health import all_ready, gather_health
+from router.live_catalog import build_live_model_catalog
 from router.metrics import Metrics
 from router.redaction import redact_payload
 from router.routing import _timeout_for, choose_model, next_fallback
@@ -91,7 +92,25 @@ def create_app(
 
     @app.get("/v1/models")
     async def models(request: Request) -> Response:
-        return await _proxy(request, "GET", "/v1/models")
+        view = request.query_params.get("view", app.state.route_config.catalog_default_view)
+        try:
+            data = build_live_model_catalog(
+                app.state.route_config,
+                getattr(app.state, "routing_state", None),
+                view=view,
+            )
+        except ValueError as exc:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {
+                        "type": "gateway_catalog_view_invalid",
+                        "message": str(exc),
+                        "view": view,
+                    }
+                },
+            )
+        return JSONResponse({"object": "list", "data": data})
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
@@ -297,13 +316,6 @@ def create_app(
             status_code=501,
             content={"error": f"/v1/{path} is not implemented by the sticky router"},
         )
-
-    async def _proxy(request: Request, method: str, path: str) -> Response:
-        url = app.state.litellm_base_url + path
-        guard = app.state.upstream_semaphore or nullcontext()
-        async with guard:
-            upstream = await app.state.http_client.request(method, url, headers=_forward_headers(request), timeout=120)
-        return _response_from_upstream(upstream)
 
     async def _proxy_json(
         request: Request,
