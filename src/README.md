@@ -261,6 +261,7 @@ after a `docker compose down -v` that wipes Postgres):
 
 | Agent / Tool | Key alias | Allowlist (deployment ids) | Max budget |
 | --- | --- | --- | --- |
+| OpenCode | `all-models` | *(all)* | — |
 | Codex CLI | `codex-cli` | `ollama-cloud.kimi-k2.7-code`, `deepseek-api.deepseek-v4-pro`, `opencode-go.kimi-k2.7-code` | $5.00 |
 | Summarizer | `summarizer` | `ollama-cloud.deepseek-v4-flash`, `deepseek-api.deepseek-v4-flash` | $2.00 |
 
@@ -297,6 +298,34 @@ Use the returned `key` value as the `Authorization: Bearer <key>` for that
 agent. The `models` list must contain deployment ids, not catalog ids. Run
 `python3 src/scripts/gateway.py explain <model>` from the repo to list the
 candidate deployments for a combo or registry model.
+
+To create a key that works with **all** gateway models (no model allowlist,
+no budget cap), pass an empty `models` array and `max_budget: None`:
+
+```bash
+docker compose exec litellm python3 -c "
+import os, json, urllib.request
+body = json.dumps({
+    'key_alias': 'all-models',
+    'models': [],
+    'max_budget': None
+}).encode()
+req = urllib.request.Request(
+    'http://localhost:4000/key/generate',
+    data=body,
+    headers={
+        'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY'],
+        'Content-Type': 'application/json',
+    },
+    method='POST',
+)
+print(json.load(urllib.request.urlopen(req, timeout=30))['key'])
+"
+```
+
+An empty `models` array means "no restriction" — the key can call any
+model or deployment the gateway exposes. Use this for the OpenCode plugin
+or other clients that need to see and use the full live catalog.
 
 The master key is only for admin setup (creating keys, viewing spend). Do not
 put it in agent configs.
