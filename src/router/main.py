@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import nullcontext
+from contextlib import asynccontextmanager, nullcontext
 from typing import Any, cast
 
 import httpx
@@ -74,13 +74,15 @@ def create_app(
     app.state.async_sleep = asyncio.sleep
     register_dashboard(app)
 
-    async def shutdown() -> None:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
         await app.state.http_client.aclose()
         await _aclose_if_present(app.state.usage_sink)
         await _aclose_if_present(app.state.session_store)
         await _aclose_if_present(getattr(app.state, "redis_stats_collector", None))
 
-    app.add_event_handler("shutdown", shutdown)
+    app.router.lifespan_context = lifespan
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:

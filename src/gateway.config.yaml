@@ -250,7 +250,6 @@ litellm:
     drop_params: true
     request_timeout: 120
     num_retries: 3
-    max_parallel_requests: 100
   cache:
     type: redis
     redis_url_env: REDIS_URL

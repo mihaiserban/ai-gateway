@@ -157,10 +157,6 @@ def render_litellm_config(catalog: GatewayCatalog) -> dict[str, Any]:
     if callbacks:
         litellm_settings["callbacks"] = callbacks
 
-    router_settings: dict[str, Any] = {}
-    if max_parallel := settings.get("max_parallel_requests"):
-        router_settings["max_parallel_requests"] = int(max_parallel)
-
     return {
         "model_list": [_render_model(deployment) for deployment in catalog.deployments.values()],
         "litellm_settings": litellm_settings,
@@ -168,7 +164,6 @@ def render_litellm_config(catalog: GatewayCatalog) -> dict[str, Any]:
             "master_key": _env_ref(general.get("master_key_env", "LITELLM_MASTER_KEY")),
             "database_url": _env_ref(general.get("database_url_env", "DATABASE_URL")),
         },
-        "router_settings": router_settings,
     }
 
 
