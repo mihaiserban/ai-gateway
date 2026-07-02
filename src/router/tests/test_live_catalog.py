@@ -24,6 +24,17 @@ def test_combo_view_only_includes_combos(route_config):
     assert {entry["gateway"]["kind"] for entry in entries} == {"combo"}
 
 
+def test_combo_reports_minimum_active_candidate_context(route_config):
+    env = {
+        "OLLAMA_API_BASE": "http://ollama",
+        "OLLAMA_API_KEY": "x",
+        "OPENCODE_GO_API_BASE": "http://go",
+        "OPENCODE_GO_API_KEY": "x",
+    }
+    entry = next(e for e in build_live_model_catalog(route_config, view="combos", env=env) if e["id"] == "coder")
+    assert entry["gateway"]["context_length"] == 128000
+
+
 def test_registry_model_groups_active_deployments(route_config):
     env = {
         "OLLAMA_API_BASE": "http://ollama",

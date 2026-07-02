@@ -418,7 +418,11 @@ def _catalog_models_for_view(catalog: GatewayCatalog, view: str) -> dict[str, di
     for entry in entries:
         meta = entry["gateway"]
         display = meta.get("model") or entry["id"]
-        models[entry["id"]] = {"name": _display_name(entry["id"], meta, display)}
+        model = {"name": _display_name(entry["id"], meta, display)}
+        context_length = meta.get("context_length")
+        if isinstance(context_length, int) and not isinstance(context_length, bool):
+            model["limit"] = {"context": context_length}
+        models[entry["id"]] = model
     return models
 
 

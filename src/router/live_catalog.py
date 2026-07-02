@@ -72,6 +72,13 @@ def _build_combo_entries(config: RouteConfig, active: set[str]) -> list[dict[str
             "strategy": combo.strategy,
             "candidates": list(candidates),
         }
+        context_lengths: list[int] = []
+        for candidate in candidates:
+            deployment = config.deployments.get(candidate)
+            if deployment is not None and deployment.context_length is not None:
+                context_lengths.append(deployment.context_length)
+        if context_lengths:
+            gateway["context_length"] = min(context_lengths)
         if combo.task is not None:
             gateway["task"] = combo.task
         entries.append(_base_entry(combo_id, gateway))

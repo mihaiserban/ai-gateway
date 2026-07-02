@@ -47,6 +47,11 @@ question about where a model id comes from and how it is routed.
 `medium`, or `high`. It is guidance for humans and packages; the router does
 not translate it into provider-specific request parameters.
 
+`/v1/models` exposes `gateway.context_length` for combos, registry models, and
+connection models when the active deployments report it. Combos use the minimum
+context length across their active candidates so harnesses can display context
+usage conservatively.
+
 ### Recommended orchestrator mapping
 
 | Orchestrator role | Combo | Reasoning level |

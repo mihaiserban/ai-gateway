@@ -116,6 +116,7 @@ def test_opencode_static_setup_writes_catalog_snapshot(tmp_path):
     assert data["provider"]["gateway"]["npm"] == "@ai-sdk/openai-compatible"
     assert data["provider"]["gateway"]["options"]["apiKey"] == "{env:VIRTUAL_KEY}"
     assert "coder" in data["provider"]["gateway"]["models"]
+    assert data["provider"]["gateway"]["models"]["coder"]["limit"]["context"] == 128000
 
 
 def test_setup_apply_writes_backup(tmp_path):

@@ -367,6 +367,10 @@ catalog tables, and scoring weights.
 Use combos first. Use a registry model when you know the model family. Use a
 connection model only when debugging or forcing one backend.
 
+Catalog entries include `gateway.context_length` when active deployments report
+it. Combos expose the minimum active candidate context, and static OpenCode
+setup maps it to `limit.context` for harness context-window displays.
+
 ### Combos
 
 All combos live under `combos:` in `src/gateway.config.yaml` and use scored
