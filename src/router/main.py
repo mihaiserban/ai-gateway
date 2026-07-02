@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import time
-from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import nullcontext
 from typing import Any, cast
@@ -20,7 +19,7 @@ from router.dashboard import register_dashboard
 from router.health import all_ready, gather_health
 from router.live_catalog import build_live_model_catalog
 from router.metrics import Metrics
-from router.redaction import redact_payload
+from router.redaction import redact_payload, redact_text
 from router.routing import DEFAULT_TIMEOUT_SECONDS, is_retryable_failure, resolve_model_request
 from router.routing_state import GatewayRoutingState
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
@@ -31,6 +30,7 @@ CACHE_RESPONSE_HEADERS = {
     "x-litellm-cache-hit",
     "x-litellm-cache-key",
 }
+MAX_REQUEST_BODY_BYTES = int(os.environ.get("GATEWAY_MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024)))
 
 logger = logging.getLogger("router")
 logger.setLevel(logging.INFO)
@@ -73,6 +73,14 @@ def create_app(
     app.state.usage_sink = usage_sink or HttpUsageEventSink(os.environ.get("USAGE_LEDGER_URL"))
     app.state.async_sleep = asyncio.sleep
     register_dashboard(app)
+
+    async def shutdown() -> None:
+        await app.state.http_client.aclose()
+        await _aclose_if_present(app.state.usage_sink)
+        await _aclose_if_present(app.state.session_store)
+        await _aclose_if_present(getattr(app.state, "redis_stats_collector", None))
+
+    app.add_event_handler("shutdown", shutdown)
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
@@ -119,9 +127,19 @@ def create_app(
     async def chat_completions(request: Request) -> Response:
         start = time.perf_counter()
         try:
-            body = await request.json()
+            body = await _limited_json_body(request)
         except json.JSONDecodeError:
             return JSONResponse(status_code=422, content={"error": "request body must be valid JSON"})
+        except RequestBodyTooLarge:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "error": {
+                        "type": "gateway_request_too_large",
+                        "message": f"request body exceeds {MAX_REQUEST_BODY_BYTES} bytes",
+                    }
+                },
+            )
         if not isinstance(body, dict):
             return JSONResponse(status_code=422, content={"error": "request body must be a JSON object"})
 
@@ -321,7 +339,7 @@ def create_app(
             # and status code with gateway headers attached.
             if is_stream:
                 return Response(
-                    content=last_response.content,
+                    content=_response_content(last_response),
                     status_code=last_response.status_code,
                     media_type=last_response.headers.get("content-type", "application/json"),
                     headers=gateway_headers,
@@ -523,11 +541,43 @@ def _response_from_upstream(
     content_type = upstream.headers.get("content-type", "application/json")
     headers = _response_headers(upstream, extra_headers)
     return Response(
-        content=upstream.content,
+        content=_response_content(upstream),
         status_code=upstream.status_code,
         media_type=content_type,
         headers=headers,
     )
+
+
+class RequestBodyTooLarge(Exception):
+    pass
+
+
+async def _limited_json_body(request: Request) -> Any:
+    total = 0
+    chunks: list[bytes] = []
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_REQUEST_BODY_BYTES:
+            raise RequestBodyTooLarge
+        chunks.append(chunk)
+    return json.loads(b"".join(chunks))
+
+
+def _response_content(upstream: httpx.Response) -> bytes:
+    content = upstream.content
+    if upstream.status_code < 400:
+        return content
+
+    content_type = upstream.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            return json.dumps(redact_payload(upstream.json()), separators=(",", ":")).encode("utf-8")
+        except Exception:
+            pass
+    try:
+        return redact_text(content.decode("utf-8")).encode("utf-8")
+    except UnicodeDecodeError:
+        return content
 
 
 def _extract_usage_from_sse(content: bytes) -> dict[str, Any] | None:
@@ -562,21 +612,28 @@ def _streaming_response(
     headers["content-type"] = content_type
 
     async def body_iterator() -> AsyncIterator[bytes]:
-        tail: deque[bytes] = deque(maxlen=2)
+        usage_payload: dict[str, Any] | None = None
+        pending = b""
         try:
             async for chunk in upstream.aiter_bytes():
-                tail.append(chunk)
+                if usage_payload is None:
+                    pending += chunk
+                    while b"\n\n" in pending:
+                        event, _, pending = pending.partition(b"\n\n")
+                        usage_payload = _extract_usage_from_sse(event + b"\n\n")
+                        if usage_payload is not None:
+                            pending = b""
+                            break
                 yield chunk
         finally:
-            payload: dict[str, Any] | None = None
-            if tail and on_close is not None:
+            if usage_payload is None and pending and on_close is not None:
                 try:
-                    payload = _extract_usage_from_sse(b"".join(tail))
+                    usage_payload = _extract_usage_from_sse(pending)
                 except Exception:
-                    payload = None
+                    usage_payload = None
             try:
                 if on_close is not None:
-                    await on_close(payload)
+                    await on_close(usage_payload)
             except Exception:
                 logger.exception("streaming_usage_event_callback_failed")
             await upstream.aclose()
@@ -643,6 +700,12 @@ def _response_headers(
         if key.lower() in CACHE_RESPONSE_HEADERS:
             headers[key] = value
     return headers
+
+
+async def _aclose_if_present(value: Any) -> None:
+    aclose = getattr(value, "aclose", None)
+    if callable(aclose):
+        await aclose()
 
 
 def _session_store(redis_url: str | None) -> SessionStore:

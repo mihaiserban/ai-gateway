@@ -1,8 +1,10 @@
 import json
+import types
 
 import httpx
 import pytest
 
+import ledger.main as ledger_main
 from ledger.main import UsageEvent, create_app
 
 
@@ -55,6 +57,25 @@ async def test_post_usage_event_returns_202_and_writes_row():
     assert stored.served_model == "coder"
     assert stored.prompt_tokens == 10
     assert stored.estimated_cost_usd == 5.5
+
+
+@pytest.mark.asyncio
+async def test_post_usage_event_records_in_worker_thread(monkeypatch: pytest.MonkeyPatch):
+    repository = FakeRepository()
+    calls = []
+
+    async def fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(ledger_main, "asyncio", types.SimpleNamespace(to_thread=fake_to_thread), raising=False)
+    app = create_app(repository=repository)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/usage-events", json=_event().model_dump())
+
+    assert response.status_code == 202
+    assert calls == [(repository.record, (repository.events[0],), {})]
 
 
 @pytest.mark.asyncio

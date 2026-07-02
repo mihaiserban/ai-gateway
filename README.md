@@ -1,13 +1,35 @@
 # agent-ai-gateway
 
-Personal OpenAI-compatible AI gateway for local agents. The stack exposes one
-stable endpoint, serves a live model catalog (combos, registry models, and
-connection models), keeps warm conversations on the same deployment, redacts
-obvious secrets before provider egress, and delegates provider adapters,
-virtual keys, caching, budgets, and spend tracking to LiteLLM.
+Private OpenAI-compatible gateway for local coding agents.
 
-The deployment target is a small Docker stack on a Synology NAS or another
-always-on LAN/Tailscale host.
+Run Codex, opencode, Claude Code, and other OpenAI-compatible tools against one
+stable endpoint on your LAN or Tailscale network. The gateway gives agents a
+small set of memorable model names (`coder`, `planner`, `explorer`,
+`coder-fast`, `vision`) and routes each request across your configured
+providers with session stickiness, fallback, virtual-key budgets, prompt-free
+usage tracking, and a live operations dashboard.
+
+This is not a public provider marketplace. It is the boring, inspectable
+control plane for your own agents: one Docker stack, one endpoint, one model
+catalog, private by default.
+
+## What You Get
+
+- **Stable agent endpoint**: point tools at `http://<host>:4100/v1`.
+- **Curated model catalog**: expose task-oriented aliases instead of raw
+  provider deployment names.
+- **Private routing control**: score only the providers and models you
+  configure, using health, latency, quota, stability, density, and priority.
+- **Sticky conversations**: send `X-Session-Id` to keep warm sessions on the
+  same deployment.
+- **Controlled fallback**: retry retryable upstream failures without hiding
+  caller auth, budget, allowlist, or malformed-request errors.
+- **LiteLLM-backed governance**: keep provider adapters, virtual keys, model
+  allowlists, caching, budgets, and spend tracking in LiteLLM.
+- **Usage without prompt storage**: record tokens, cost estimates, latency,
+  cache status, and fallback metadata without storing prompts or responses.
+- **Live operations dashboard**: inspect health, readiness, model catalog,
+  provider availability, spend, and recent failures.
 
 ## What It Runs
 
@@ -236,6 +258,7 @@ Important environment values:
 | `DEEPSEEK_API_KEY` | Provider key for `deepseek-api.*` deployments. |
 | `OPENCODE_GO_API_KEY`, `OPENCODE_GO_API_BASE` | Provider settings for `opencode-go.*` deployments. |
 | `OLLAMA_API_KEY`, `OLLAMA_API_BASE` | Ollama Cloud settings for `ollama-cloud.*` deployments. |
+| `GATEWAY_MAX_REQUEST_BODY_BYTES` | Optional router request body limit before JSON parsing. Defaults to `10485760` (10 MiB). |
 | `VIRTUAL_KEY` | Default LiteLLM virtual key written into client configs by `gateway setup`. |
 
 Edit providers, connections, combos, router, and LiteLLM values in

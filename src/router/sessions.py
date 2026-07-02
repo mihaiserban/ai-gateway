@@ -47,6 +47,9 @@ class RedisSessionStore:
     async def set(self, session_id: str, value: dict[str, Any], ttl_seconds: int) -> None:
         await self._redis.set(_key(session_id), json.dumps(value), ex=ttl_seconds)
 
+    async def aclose(self) -> None:
+        await self._redis.aclose()
+
 
 def _key(session_id: str) -> str:
     return f"session:{session_id}"

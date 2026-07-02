@@ -66,6 +66,8 @@ Edit `.env` and set:
 - `OPENCODE_GO_API_KEY`
 - `OLLAMA_API_KEY`
 - `OLLAMA_API_BASE=https://ollama.com` for the default `ollama-cloud` connection
+- Optional: `GATEWAY_MAX_REQUEST_BODY_BYTES` to override the router request
+  body limit before JSON parsing; default is `10485760` (10 MiB).
 
 The checked-in catalog names the Ollama connection `ollama-cloud`. If you want
 to run a separate local Ollama connection later, add it as a distinct

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import httpx
 import pytest
 
@@ -49,6 +51,39 @@ async def test_http_usage_sink_posts_prompt_free_event():
     assert "raw-session" not in seen["json"]
     assert "keyhash" in seen["json"]
     assert "sessionhash" in seen["json"]
+
+
+@pytest.mark.asyncio
+async def test_http_usage_sink_reuses_client_and_closes(monkeypatch: pytest.MonkeyPatch):
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        instances: ClassVar[list["FakeClient"]] = []
+
+        def __init__(self, **kwargs) -> None:
+            self.closed = False
+            self.posts = 0
+            FakeClient.instances.append(self)
+
+        async def post(self, url: str, *, json: dict) -> FakeResponse:
+            self.posts += 1
+            return FakeResponse()
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr("router.usage_events.httpx.AsyncClient", FakeClient)
+    sink = HttpUsageEventSink("http://usage-ledger:4200")
+
+    await sink.record(_event())
+    await sink.record(_event())
+    await sink.aclose()
+
+    assert len(FakeClient.instances) == 1
+    assert FakeClient.instances[0].posts == 2
+    assert FakeClient.instances[0].closed is True
 
 
 def _event() -> UsageEvent:

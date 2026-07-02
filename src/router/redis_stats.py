@@ -52,6 +52,11 @@ class RedisStatsCollector:
             "db_keys": _sum_db_keys(info),
         }
 
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
 
 def _sum_db_keys(info: dict[str, Any]) -> int | None:
     total = 0

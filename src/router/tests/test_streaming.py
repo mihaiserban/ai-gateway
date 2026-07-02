@@ -134,6 +134,15 @@ class FakeSink:
         self.events.append(event)
 
 
+class ChunkStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
 @pytest.mark.asyncio
 async def test_chat_stream_extracts_usage_from_sse(monkeypatch, simple_route_config_path: str):
     sink = FakeSink()
@@ -159,6 +168,36 @@ async def test_chat_stream_extracts_usage_from_sse(monkeypatch, simple_route_con
     assert event.total_tokens == 15
     assert event.stream is True
     assert event.served_model == "ollama-cloud.kimi-k2.7-code"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_extracts_usage_before_final_chunks(monkeypatch, simple_route_config_path: str):
+    sink = FakeSink()
+    chunks = [
+        b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+        b'data: {"choices":[{"delta":{"content":" world"}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\n',
+        b'data: {"choices":[{"delta":{"content":"."}}]}\n\n',
+        b"data: [DONE]\n\n",
+    ]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=ChunkStream(chunks), headers={"content-type": "text/event-stream"})
+
+    app = _app(monkeypatch, simple_route_config_path, httpx.MockTransport(handler))
+    app.state.usage_sink = sink
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer test", "X-Session-Id": "stream-usage"},
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+        )
+
+    assert response.status_code == 200
+    event = sink.events[0]
+    assert event.prompt_tokens == 10
+    assert event.completion_tokens == 5
+    assert event.total_tokens == 15
 
 
 @pytest.mark.asyncio

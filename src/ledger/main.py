@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -95,7 +96,7 @@ def create_app(repository: Any | None = None) -> FastAPI:
 
     @app.post("/usage-events")
     async def usage_events(event: UsageEvent) -> JSONResponse:
-        app.state.repository.record(event)
+        await asyncio.to_thread(app.state.repository.record, event)
         return JSONResponse(status_code=202, content={"status": "accepted"})
 
     @app.get("/healthz")

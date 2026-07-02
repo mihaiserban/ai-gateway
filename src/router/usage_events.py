@@ -41,13 +41,23 @@ class HttpUsageEventSink:
     ) -> None:
         self.base_url = base_url.rstrip("/") if base_url else None
         self.transport = transport
+        self._client: httpx.AsyncClient | None = None
 
     async def record(self, event: UsageEvent) -> None:
         if not self.base_url:
             return
-        async with httpx.AsyncClient(transport=self.transport, timeout=2.0) as client:
-            response = await client.post(f"{self.base_url}/usage-events", json=asdict(event))
-            response.raise_for_status()
+        response = await self._http_client().post(f"{self.base_url}/usage-events", json=asdict(event))
+        response.raise_for_status()
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    def _http_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(transport=self.transport, timeout=2.0)
+        return self._client
 
 
 def fingerprint(value: str | None, length: int = 16) -> str:

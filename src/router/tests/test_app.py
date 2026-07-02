@@ -4,6 +4,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+import router.main as router_main
 from router.main import _fallback_session_id, create_app
 
 ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
@@ -120,6 +121,25 @@ async def test_chat_returns_422_for_empty_body(simple_route_config_path: str):
 
 
 @pytest.mark.asyncio
+async def test_chat_rejects_oversized_body_before_upstream(
+    monkeypatch: pytest.MonkeyPatch, simple_route_config_path: str, upstream
+):
+    monkeypatch.setattr(router_main, "MAX_REQUEST_BODY_BYTES", 20, raising=False)
+    app = _app(monkeypatch, simple_route_config_path, ENV_OLLAMA, upstream.handler())
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            content=b'{"model":"kimi-k2.7-code","messages":[]}',
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["type"] == "gateway_request_too_large"
+    assert upstream.requests == []
+
+
+@pytest.mark.asyncio
 async def test_chat_retries_ordered_deployments_only_for_retryable_failures(
     monkeypatch, simple_route_config_path: str, upstream
 ):
@@ -151,6 +171,26 @@ async def test_chat_does_not_fallback_for_caller_error(monkeypatch, simple_route
 
     assert response.status_code == 400
     assert len(upstream.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_upstream_error_body_is_redacted(monkeypatch, simple_route_config_path: str, upstream):
+    upstream.enqueue_json(
+        status_code=400,
+        body={"error": {"message": "invalid key sk-secret-value-1234567890"}},
+    )
+    app = _app(monkeypatch, simple_route_config_path, ENV_OLLAMA, upstream.handler())
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == 400
+    body = response.text
+    assert "sk-secret" not in body
+    assert "[REDACTED]" in body
 
 
 @pytest.mark.asyncio
