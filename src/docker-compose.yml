@@ -46,7 +46,7 @@ services:
       PYTHONPATH: /app
       ENFORCE_PRISMA_MIGRATION_CHECK: "true"
     entrypoint: ["/bin/sh", "-c"]
-    command: ["echo 'Waiting for Postgres and Redis to be fully ready...' && sleep 20 && exec /app/docker/prod_entrypoint.sh --config=/app/litellm.config.yaml --port=4000"]
+    command: ["exec /app/docker/prod_entrypoint.sh --config=/app/litellm.config.yaml --port=4000"]
     expose:
       - "4000"
     volumes:
