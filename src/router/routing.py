@@ -103,12 +103,13 @@ class ResolvedModel:
 def is_retryable_failure(status: int | str) -> bool:
     """Return True when a failed attempt should fall back to the next deployment.
 
-    Int status: retryable for {408, 409, 425, 429, 500, 502, 503, 504}.
+    Int status: retryable for {402, 408, 409, 425, 429, 500, 502, 503, 504}.
+    402 (Payment Required) = provider billing issue, not a caller error.
     Str status: retryable when it mentions transport/timeout/quota/rate/
     overloaded/unavailable. Caller errors (400/401/403/404/422) never retry.
     """
     if isinstance(status, int):
-        return status in {408, 409, 425, 429, 500, 502, 503, 504}
+        return status in {402, 408, 409, 425, 429, 500, 502, 503, 504}
     lowered = str(status).lower()
     return any(word in lowered for word in ("transport", "timeout", "quota", "rate", "overloaded", "unavailable"))
 

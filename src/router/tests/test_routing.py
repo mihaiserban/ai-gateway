@@ -77,6 +77,7 @@ def test_priority_strategy_preserves_configured_order_except_quota_cooldown():
 
 
 def test_retryable_statuses_fallback_to_next_deployment():
+    assert is_retryable_failure(402)
     assert is_retryable_failure(429)
     assert is_retryable_failure(503)
     assert is_retryable_failure("transport_error")
