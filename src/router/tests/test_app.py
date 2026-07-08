@@ -305,6 +305,32 @@ async def test_warm_session_reuses_same_deployment_for_same_auth_and_session(
 
 
 @pytest.mark.asyncio
+async def test_warm_session_does_not_pin_across_model_changes(
+    monkeypatch, simple_route_config_path: str, upstream
+):
+    upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
+    upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
+    app = _app(monkeypatch, simple_route_config_path, ENV_ALL, upstream.handler())
+
+    headers = {"Authorization": "Bearer key-a", "X-Session-Id": "same"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "a"}]},
+        )
+        app.state.routing_state.record_latency("ollama-cloud.kimi-k2.7-code", 900)
+        await client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={"model": "coder", "messages": [{"role": "user", "content": "b"}]},
+        )
+
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
+    assert upstream.body(1)["model"] != "ollama-cloud.kimi-k2.7-code"
+
+
+@pytest.mark.asyncio
 async def test_chat_success_sets_gateway_routing_headers(monkeypatch, simple_route_config_path: str, upstream):
     upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
     app = _app(monkeypatch, simple_route_config_path, {**ENV_OLLAMA, **ENV_GO}, upstream.handler())

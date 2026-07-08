@@ -805,6 +805,8 @@ async def _resolve_warm_deployment(
     session = await app.state.session_store.get(session_key)
     if not session:
         return None
+    if session.get("requested_model") != resolved.requested_model:
+        return None
     served = session.get("served_deployment")
     if not isinstance(served, str) or served not in resolved.ordered_deployments:
         return None
