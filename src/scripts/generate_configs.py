@@ -59,7 +59,27 @@ def _render_combos(catalog: GatewayCatalog) -> dict[str, Any]:
         if combo.task is not None:
             entry["task"] = combo.task
         entry["scoring"] = _render_scoring(combo.scoring)
+        if combo.tiers:
+            entry["tiers"] = _render_tiers(catalog, combo.tiers)
         rendered[combo_id] = entry
+    return rendered
+
+
+def _render_tiers(catalog: GatewayCatalog, tiers: dict[str, Any]) -> dict[str, Any]:
+    rendered: dict[str, Any] = {}
+    for tier_id, tier in tiers.items():
+        tier_entry: dict[str, Any] = {}
+        if tier.candidates is not None:
+            tier_entry["candidates"] = [
+                _deployment_id_for(catalog, c.connection_id, c.model_id) for c in tier.candidates
+            ]
+        if tier.strategy is not None:
+            tier_entry["strategy"] = tier.strategy
+        if tier.scoring is not None:
+            tier_entry["scoring"] = _render_scoring(tier.scoring)
+        if tier.task is not None:
+            tier_entry["task"] = tier.task
+        rendered[tier_id] = tier_entry
     return rendered
 
 

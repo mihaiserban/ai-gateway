@@ -31,6 +31,15 @@ class ScoringWeights:
 
 
 @dataclass
+class TierRuntime:
+    id: str
+    candidates: tuple[str, ...] | None = None
+    strategy: str | None = None
+    scoring: ScoringWeights | None = None
+    task: str | None = None
+
+
+@dataclass
 class ComboRuntime:
     """Runtime representation of a combo, with candidate deployment ids."""
 
@@ -38,6 +47,7 @@ class ComboRuntime:
     candidates: tuple[str, ...] = ()
     task: str | None = None
     scoring: ScoringWeights | None = None
+    tiers: dict[str, TierRuntime] = field(default_factory=dict)
 
 
 @dataclass
@@ -129,13 +139,24 @@ def resolve_model_request(
     if requested is None:
         return resolve_model_request(config.default_model, config, state, now, env=env)
 
-    # 1. combo
-    combo = config.combos.get(requested)
+    # 1. combo (with optional tier, e.g. "coder:fast")
+    combo_id, tier_name = _parse_combo_tier(requested)
+    combo = config.combos.get(combo_id)
     if combo is not None:
-        candidates = [c for c in combo.candidates if c in active]
+        tier = combo.tiers.get(tier_name) if tier_name else None
+        if tier_name and tier is None:
+            return ResolvedModel(kind="not-found", ordered_deployments=[], requested_model=requested)
+        tier_candidates = tier.candidates if tier and tier.candidates is not None else combo.candidates
+        candidates = [c for c in tier_candidates if c in active]
         if not candidates:
             return ResolvedModel(kind="unavailable", ordered_deployments=[], requested_model=requested)
-        ordered = _order_candidates(candidates, combo, config, state, now)
+        effective = ComboRuntime(
+            strategy=tier.strategy if tier and tier.strategy is not None else combo.strategy,
+            candidates=tuple(candidates),
+            task=tier.task if tier and tier.task is not None else combo.task,
+            scoring=tier.scoring if tier and tier.scoring is not None else combo.scoring,
+        )
+        ordered = _order_candidates(list(effective.candidates), effective, config, state, now)
         return ResolvedModel(kind="combo", ordered_deployments=ordered, requested_model=requested)
 
     # 2. connection-model (explicit deployment id)
@@ -179,3 +200,10 @@ def _order_candidates(
 
     weights = combo.scoring if combo is not None and combo.scoring is not None else None
     return state.order_deployments(candidate_ids, deployments, weights, now)
+
+
+def _parse_combo_tier(model: str) -> tuple[str, str | None]:
+    if ":" in model:
+        base, tier = model.split(":", 1)
+        return base, tier
+    return model, None

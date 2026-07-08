@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig, ScoringWeights
+from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig, ScoringWeights, TierRuntime
 
 logger = logging.getLogger("router.config")
 
@@ -75,8 +75,41 @@ def _load_combos(raw: dict[str, Any]) -> dict[str, ComboRuntime]:
         scoring = _load_scoring(body.get("scoring"))
         task_raw = body.get("task")
         task = str(task_raw) if isinstance(task_raw, str) else None
-        combos[combo_id] = ComboRuntime(strategy=strategy, candidates=candidates, task=task, scoring=scoring)
+        tiers = _load_tiers(body.get("tiers"))
+        combos[combo_id] = ComboRuntime(
+            strategy=strategy,
+            candidates=candidates,
+            task=task,
+            scoring=scoring,
+            tiers=tiers,
+        )
     return combos
+
+
+def _load_tiers(raw: Any) -> dict[str, TierRuntime]:
+    if raw is None or not isinstance(raw, Mapping):
+        return {}
+    tiers: dict[str, TierRuntime] = {}
+    for tier_id, tier_body in raw.items():
+        if not isinstance(tier_body, dict):
+            continue
+        tier_candidates_raw = tier_body.get("candidates")
+        tier_candidates: tuple[str, ...] | None = None
+        if isinstance(tier_candidates_raw, list):
+            tier_candidates = tuple(str(c) for c in tier_candidates_raw)
+        tier_strategy = tier_body.get("strategy")
+        tier_strategy_val = str(tier_strategy) if isinstance(tier_strategy, str) else None
+        tier_scoring = _load_scoring(tier_body.get("scoring"))
+        task_raw = tier_body.get("task")
+        tier_task = str(task_raw) if isinstance(task_raw, str) else None
+        tiers[tier_id] = TierRuntime(
+            id=tier_id,
+            candidates=tier_candidates,
+            strategy=tier_strategy_val,
+            scoring=tier_scoring,
+            task=tier_task,
+        )
+    return tiers
 
 
 def _load_scoring(raw: Any) -> ScoringWeights | None:

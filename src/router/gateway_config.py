@@ -24,6 +24,7 @@ __all__ = [
     "GatewayConfigError",
     "Provider",
     "ScoringWeights",
+    "Tier",
     "expand_gateway_config",
     "load_gateway_catalog",
 ]
@@ -91,12 +92,22 @@ class ComboCandidate:
 
 
 @dataclass(frozen=True)
+class Tier:
+    id: str
+    candidates: tuple[ComboCandidate, ...] | None = None
+    strategy: str | None = None
+    scoring: ScoringWeights | None = None
+    task: str | None = None
+
+
+@dataclass(frozen=True)
 class Combo:
     id: str
     strategy: str
     candidates: tuple[ComboCandidate, ...]
     scoring: ScoringWeights = field(default_factory=ScoringWeights)
     task: str | None = None
+    tiers: dict[str, Tier] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -383,29 +394,19 @@ def _build_combos(
                 raise GatewayConfigError(f"combo {combo_id!r} candidate must be a mapping")
             cand_conn = _required_str(cand, "connection", f"combo {combo_id!r} candidate")
             cand_model = _required_str(cand, "model", f"combo {combo_id!r} candidate")
-            conn = connections.get(cand_conn)
-            if conn is None:
-                raise GatewayConfigError(f"combo {combo_id!r} candidate references unknown connection {cand_conn!r}")
-            provider = providers[conn.provider_id]
-            if conn.models == "all":
-                served_models = tuple(provider.models.keys())
-            else:
-                served_models = cast("tuple[str, ...]", conn.models)
-            if cand_model not in served_models:
-                raise GatewayConfigError(
-                    f"combo {combo_id!r} candidate references connection {cand_conn!r} "
-                    f"which does not serve model {cand_model!r}"
-                )
+            _validate_combo_candidate(combo_id, cand_conn, cand_model, connections, providers)
             candidates.append(ComboCandidate(connection_id=cand_conn, model_id=cand_model))
 
         scoring = _build_scoring(body.get("scoring"), combo_id)
         task = _optional_str(body, "task", f"combo {combo_id!r}")
+        tiers = _build_tiers(body, combo_id, connections, providers)
         combos[combo_id] = Combo(
             id=combo_id,
             strategy=strategy,
             candidates=tuple(candidates),
             scoring=scoring,
             task=task,
+            tiers=tiers,
         )
     return combos
 
@@ -435,6 +436,78 @@ def _build_scoring(raw: Any, combo_id: str) -> ScoringWeights:
     )
 
 
+def _validate_combo_candidate(
+    combo_id: str,
+    cand_conn: str,
+    cand_model: str,
+    connections: dict[str, Connection],
+    providers: dict[str, Provider],
+) -> None:
+    conn = connections.get(cand_conn)
+    if conn is None:
+        raise GatewayConfigError(f"combo {combo_id!r} candidate references unknown connection {cand_conn!r}")
+    provider = providers[conn.provider_id]
+    served_models = tuple(provider.models.keys()) if conn.models == "all" else cast("tuple[str, ...]", conn.models)
+    if cand_model not in served_models:
+        raise GatewayConfigError(
+            f"combo {combo_id!r} candidate references connection {cand_conn!r} "
+            f"which does not serve model {cand_model!r}"
+        )
+
+
+def _build_tiers(
+    body: Mapping[str, Any],
+    combo_id: str,
+    connections: dict[str, Connection],
+    providers: dict[str, Provider],
+) -> dict[str, Tier]:
+    tiers_raw_val = body.get("tiers")
+    if tiers_raw_val is None:
+        return {}
+    if not isinstance(tiers_raw_val, Mapping):
+        raise GatewayConfigError(f"combo {combo_id!r} tiers must be a mapping")
+    tiers: dict[str, Tier] = {}
+    for tier_id, tier_body in dict(tiers_raw_val).items():
+        if not isinstance(tier_body, Mapping):
+            raise GatewayConfigError(f"combo {combo_id!r} tier {tier_id!r} must be a mapping")
+        _require_slug(tier_id, f"combo {combo_id!r} tier id")
+        if tier_id in ("balanced", "default"):
+            raise GatewayConfigError(
+                f"combo {combo_id!r} tier id {tier_id!r} is reserved; "
+                f"the bare combo id (e.g. {combo_id!r}) already represents the default/balanced tier"
+            )
+        tier_candidates: tuple[ComboCandidate, ...] | None = None
+        tier_candidates_raw = tier_body.get("candidates")
+        if tier_candidates_raw is not None:
+            if not isinstance(tier_candidates_raw, list) or not tier_candidates_raw:
+                raise GatewayConfigError(f"combo {combo_id!r} tier {tier_id!r} candidates must be a non-empty list")
+            cands: list[ComboCandidate] = []
+            for cand in tier_candidates_raw:
+                if not isinstance(cand, Mapping):
+                    raise GatewayConfigError(f"combo {combo_id!r} tier {tier_id!r} candidate must be a mapping")
+                cand_conn = _required_str(cand, "connection", f"combo {combo_id!r} tier {tier_id!r} candidate")
+                cand_model = _required_str(cand, "model", f"combo {combo_id!r} tier {tier_id!r} candidate")
+                _validate_combo_candidate(combo_id, cand_conn, cand_model, connections, providers)
+                cands.append(ComboCandidate(connection_id=cand_conn, model_id=cand_model))
+            tier_candidates = tuple(cands)
+        tier_strategy = _optional_str(tier_body, "strategy", f"combo {combo_id!r} tier {tier_id!r}")
+        if tier_strategy is not None and tier_strategy not in _VALID_STRATEGIES:
+            raise GatewayConfigError(
+                f"combo {combo_id!r} tier {tier_id!r} strategy must be one of {_VALID_STRATEGIES}, "
+                f"got {tier_strategy!r}"
+            )
+        tier_scoring = _build_scoring(tier_body.get("scoring"), f"{combo_id}:{tier_id}")
+        tier_task = _optional_str(tier_body, "task", f"combo {combo_id!r} tier {tier_id!r}")
+        tiers[tier_id] = Tier(
+            id=tier_id,
+            candidates=tier_candidates,
+            strategy=tier_strategy,
+            scoring=tier_scoring,
+            task=tier_task,
+        )
+    return tiers
+
+
 def _validate_router(
     router: Mapping[str, Any],
     combos: dict[str, Combo],
@@ -447,7 +520,14 @@ def _validate_router(
         return
     if not isinstance(default_model, str) or not default_model:
         raise GatewayConfigError("router.default_model must be a non-empty string")
-    valid_ids = set(combos.keys())
+    base_id, tier_id = _parse_model_tier(default_model)
+    if base_id in combos:
+        if tier_id and tier_id not in combos[base_id].tiers:
+            raise GatewayConfigError(
+                f"router.default_model {default_model!r} references unknown tier {tier_id!r} on combo {base_id!r}"
+            )
+        return
+    valid_ids: set[str] = set()
     for provider in providers.values():
         valid_ids.update(provider.models.keys())
     for deployment_id in deployments:
@@ -456,6 +536,13 @@ def _validate_router(
         raise GatewayConfigError(
             f"router.default_model {default_model!r} must reference a combo, registry model, or deployment id"
         )
+
+
+def _parse_model_tier(model: str) -> tuple[str, str | None]:
+    if ":" in model:
+        base, tier = model.split(":", 1)
+        return base, tier
+    return model, None
 
 
 def _require_slug(value: Any, label: str) -> None:

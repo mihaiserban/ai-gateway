@@ -305,9 +305,7 @@ async def test_warm_session_reuses_same_deployment_for_same_auth_and_session(
 
 
 @pytest.mark.asyncio
-async def test_warm_session_does_not_pin_across_model_changes(
-    monkeypatch, simple_route_config_path: str, upstream
-):
+async def test_warm_session_does_not_pin_across_model_changes(monkeypatch, simple_route_config_path: str, upstream):
     upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
     upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
     app = _app(monkeypatch, simple_route_config_path, ENV_ALL, upstream.handler())

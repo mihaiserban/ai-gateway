@@ -115,3 +115,86 @@ def test_model_id_is_exact_and_not_lowercased():
     config["combos"]["coder"]["candidates"][0]["model"] = "Model.With.Case"
     catalog = expand_gateway_config(config)
     assert "ollama-cloud.Model.With.Case" in catalog.deployments
+
+
+def test_combo_tiers_are_parsed():
+    config = minimal_config()
+    config["combos"]["coder"]["tiers"] = {
+        "fast": {
+            "candidates": [
+                {"connection": "ollama-cloud", "model": "kimi-k2.7-code"},
+            ],
+            "scoring": {"latency": 0.50},
+        }
+    }
+    catalog = expand_gateway_config(config)
+    assert "fast" in catalog.combos["coder"].tiers
+    tier = catalog.combos["coder"].tiers["fast"]
+    assert tier.candidates is not None
+    assert len(tier.candidates) == 1
+    assert tier.candidates[0].connection_id == "ollama-cloud"
+    assert tier.scoring is not None
+    assert tier.scoring.latency == 0.50
+
+
+def test_combo_tier_inherits_from_parent():
+    config = minimal_config()
+    config["combos"]["coder"]["tiers"] = {
+        "fast": {"scoring": {"latency": 0.50}},
+    }
+    catalog = expand_gateway_config(config)
+    tier = catalog.combos["coder"].tiers["fast"]
+    assert tier.candidates is None
+    assert tier.strategy is None
+
+
+def test_rejects_tier_reserved_name():
+    config = minimal_config()
+    config["combos"]["coder"]["tiers"] = {
+        "default": {"scoring": {"latency": 0.50}},
+    }
+    with pytest.raises(GatewayConfigError, match="reserved"):
+        expand_gateway_config(config)
+
+
+def test_rejects_tier_for_unknown_connection():
+    config = minimal_config()
+    config["combos"]["coder"]["tiers"] = {
+        "fast": {
+            "candidates": [
+                {"connection": "missing", "model": "kimi-k2.7-code"},
+            ],
+        }
+    }
+    with pytest.raises(GatewayConfigError, match="unknown connection"):
+        expand_gateway_config(config)
+
+
+def test_tier_with_empty_candidates_is_rejected():
+    config = minimal_config()
+    config["combos"]["coder"]["tiers"] = {
+        "fast": {"candidates": []},
+    }
+    with pytest.raises(GatewayConfigError, match="non-empty list"):
+        expand_gateway_config(config)
+
+
+def test_router_default_model_with_tier_is_valid():
+    config = minimal_config()
+    config["router"] = {"default_model": "coder:fast"}
+    config["combos"]["coder"]["tiers"] = {
+        "fast": {
+            "candidates": [
+                {"connection": "ollama-cloud", "model": "kimi-k2.7-code"},
+            ],
+        }
+    }
+    catalog = expand_gateway_config(config)
+    assert catalog.router["default_model"] == "coder:fast"
+
+
+def test_router_default_model_with_unknown_tier_is_rejected():
+    config = minimal_config()
+    config["router"] = {"default_model": "coder:unknown"}
+    with pytest.raises(GatewayConfigError, match="unknown tier"):
+        expand_gateway_config(config)

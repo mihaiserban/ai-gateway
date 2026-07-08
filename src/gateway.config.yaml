@@ -175,26 +175,25 @@ combos:
       stability: 0.15
       connection_density: 0.10
       priority: 0.10
-
-  coder-fast:
-    task: quick-build
-    strategy: score
-    candidates:
-      - connection: ollama-cloud
-        model: deepseek-v4-flash
-      - connection: deepseek-api
-        model: deepseek-v4-flash
-      - connection: opencode-go
-        model: deepseek-v4-flash
-      - connection: opencode-go
-        model: kimi-k2.6
-    scoring:
-      health: 0.30
-      latency: 0.20
-      quota: 0.15
-      stability: 0.15
-      connection_density: 0.10
-      priority: 0.10
+    tiers:
+      fast:
+        task: quick-build
+        candidates:
+          - connection: ollama-cloud
+            model: deepseek-v4-flash
+          - connection: deepseek-api
+            model: deepseek-v4-flash
+          - connection: opencode-go
+            model: deepseek-v4-flash
+          - connection: opencode-go
+            model: kimi-k2.6
+        scoring:
+          health: 0.30
+          latency: 0.20
+          quota: 0.15
+          stability: 0.15
+          connection_density: 0.10
+          priority: 0.10
 
   vision:
     task: vision
@@ -231,7 +230,7 @@ clients:
         - ~/.claude/settings.json
     opencode:
       model: coder
-      small_model: coder-fast
+      small_model: coder:fast
       catalog: all
       mode: local-plugin
       provider_id: gateway

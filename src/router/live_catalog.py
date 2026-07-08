@@ -20,7 +20,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from router.routing import DeploymentRuntime, RouteConfig
+from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig
 
 __all__ = [
     "active_deployment_ids",
@@ -65,24 +65,46 @@ def _build_combo_entries(config: RouteConfig, active: set[str]) -> list[dict[str
     entries: list[dict[str, Any]] = []
     for combo_id, combo in config.combos.items():
         candidates = [c for c in combo.candidates if c in active]
-        if not candidates:
-            continue
-        gateway: dict[str, Any] = {
-            "kind": "combo",
-            "strategy": combo.strategy,
-            "candidates": list(candidates),
-        }
-        context_lengths: list[int] = []
-        for candidate in candidates:
-            deployment = config.deployments.get(candidate)
-            if deployment is not None and deployment.context_length is not None:
-                context_lengths.append(deployment.context_length)
-        if context_lengths:
-            gateway["context_length"] = min(context_lengths)
-        if combo.task is not None:
-            gateway["task"] = combo.task
-        entries.append(_base_entry(combo_id, gateway))
+        if candidates:
+            entries.append(_combo_model_entry(combo_id, combo, candidates, active, config))
+        for tier_id, tier in combo.tiers.items():
+            tier_candidates = tier.candidates if tier.candidates is not None else combo.candidates
+            tier_active = [c for c in tier_candidates if c in active]
+            if not tier_active:
+                continue
+            tier_id_full = f"{combo_id}:{tier_id}"
+            tier_combo = ComboRuntime(
+                strategy=tier.strategy if tier.strategy is not None else combo.strategy,
+                candidates=tuple(tier_active),
+                task=tier.task if tier.task is not None else combo.task,
+                scoring=tier.scoring if tier.scoring is not None else combo.scoring,
+            )
+            entries.append(_combo_model_entry(tier_id_full, tier_combo, tier_active, active, config))
     return entries
+
+
+def _combo_model_entry(
+    model_id: str,
+    combo: ComboRuntime,
+    active_candidates: list[str],
+    active: set[str],
+    config: RouteConfig,
+) -> dict[str, Any]:
+    gateway: dict[str, Any] = {
+        "kind": "combo",
+        "strategy": combo.strategy,
+        "candidates": list(active_candidates),
+    }
+    context_lengths: list[int] = []
+    for candidate in active_candidates:
+        deployment = config.deployments.get(candidate)
+        if deployment is not None and deployment.context_length is not None:
+            context_lengths.append(deployment.context_length)
+    if context_lengths:
+        gateway["context_length"] = min(context_lengths)
+    if combo.task is not None:
+        gateway["task"] = combo.task
+    return _base_entry(model_id, gateway)
 
 
 def _build_registry_entries(config: RouteConfig, active: set[str]) -> list[dict[str, Any]]:

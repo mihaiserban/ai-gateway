@@ -1,5 +1,13 @@
 from router.config import load_route_config
-from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig, is_retryable_failure, resolve_model_request
+from router.routing import (
+    ComboRuntime,
+    DeploymentRuntime,
+    RouteConfig,
+    ScoringWeights,
+    TierRuntime,
+    is_retryable_failure,
+    resolve_model_request,
+)
 from router.routing_state import GatewayRoutingState
 
 
@@ -80,3 +88,133 @@ def test_caller_errors_do_not_fallback():
     assert not is_retryable_failure(401)
     assert not is_retryable_failure(403)
     assert not is_retryable_failure(422)
+
+
+def test_combo_tier_overrides_candidates():
+    config = RouteConfig(
+        combos={
+            "coder": ComboRuntime(
+                strategy="score",
+                candidates=("dep-a", "dep-b"),
+                tiers={
+                    "fast": TierRuntime(
+                        id="fast",
+                        candidates=("dep-c", "dep-d"),
+                        strategy="score",
+                    ),
+                },
+            ),
+        },
+        deployments={
+            "dep-a": DeploymentRuntime(provider="p", connection="c1", model="m"),
+            "dep-b": DeploymentRuntime(provider="p", connection="c2", model="m"),
+            "dep-c": DeploymentRuntime(provider="p", connection="c3", model="m"),
+            "dep-d": DeploymentRuntime(provider="p", connection="c4", model="m"),
+        },
+    )
+    base = resolve_model_request("coder", config, GatewayRoutingState(), now=1000.0, env={})
+    tier = resolve_model_request("coder:fast", config, GatewayRoutingState(), now=1000.0, env={})
+
+    assert base.kind == "combo"
+    assert set(base.ordered_deployments) == {"dep-a", "dep-b"}
+    assert tier.kind == "combo"
+    assert set(tier.ordered_deployments) == {"dep-c", "dep-d"}
+
+
+def test_combo_tier_inherits_candidates_when_not_specified():
+    config = RouteConfig(
+        combos={
+            "coder": ComboRuntime(
+                strategy="score",
+                candidates=("dep-a", "dep-b"),
+                tiers={
+                    "cheap": TierRuntime(
+                        id="cheap",
+                        scoring=ScoringWeights(latency=0.05, health=0.35),
+                    ),
+                },
+            ),
+        },
+        deployments={
+            "dep-a": DeploymentRuntime(provider="p", connection="c1", model="m"),
+            "dep-b": DeploymentRuntime(provider="p", connection="c2", model="m"),
+        },
+    )
+    resolved = resolve_model_request("coder:cheap", config, GatewayRoutingState(), now=1000.0, env={})
+
+    assert resolved.kind == "combo"
+    assert set(resolved.ordered_deployments) == {"dep-a", "dep-b"}
+
+
+def test_combo_tier_inherits_strategy_when_not_specified():
+    config = RouteConfig(
+        combos={
+            "coder": ComboRuntime(
+                strategy="score",
+                candidates=("dep-a", "dep-b"),
+                tiers={
+                    "fast": TierRuntime(
+                        id="fast",
+                        candidates=("dep-a", "dep-b"),
+                    ),
+                },
+            ),
+        },
+        deployments={
+            "dep-a": DeploymentRuntime(provider="p", connection="c1", model="m"),
+            "dep-b": DeploymentRuntime(provider="p", connection="c2", model="m"),
+        },
+    )
+    base = resolve_model_request("coder", config, GatewayRoutingState(), now=1000.0, env={})
+    tier = resolve_model_request("coder:fast", config, GatewayRoutingState(), now=1000.0, env={})
+
+    assert base.kind == "combo"
+    assert tier.kind == "combo"
+    assert set(tier.ordered_deployments) == set(base.ordered_deployments)
+
+
+def test_unknown_tier_returns_not_found():
+    config = RouteConfig(
+        combos={
+            "coder": ComboRuntime(
+                strategy="score",
+                candidates=("dep-a",),
+                tiers={
+                    "fast": TierRuntime(
+                        id="fast",
+                        candidates=("dep-a",),
+                    ),
+                },
+            ),
+        },
+        deployments={
+            "dep-a": DeploymentRuntime(provider="p", connection="c1", model="m"),
+        },
+    )
+    resolved = resolve_model_request("coder:unknown", config, GatewayRoutingState(), now=1000.0, env={})
+
+    assert resolved.kind == "not-found"
+
+
+def test_tier_with_no_active_candidates_returns_unavailable():
+    config = RouteConfig(
+        combos={
+            "coder": ComboRuntime(
+                strategy="score",
+                candidates=("dep-a",),
+                tiers={
+                    "fast": TierRuntime(
+                        id="fast",
+                        candidates=("dep-b",),
+                    ),
+                },
+            ),
+        },
+        deployments={
+            "dep-a": DeploymentRuntime(provider="p", connection="c1", model="m"),
+            "dep-b": DeploymentRuntime(provider="p", connection="c2", model="m", required_env=("MISSING_KEY",)),
+        },
+    )
+    resolved = resolve_model_request("coder:fast", config, GatewayRoutingState(), now=1000.0, env={})
+
+    assert resolved.kind == "unavailable"

@@ -2,7 +2,7 @@ import pytest
 
 from router.config import load_route_config
 from router.live_catalog import active_deployment_ids, build_live_model_catalog, deployment_is_active
-from router.routing import DeploymentRuntime, RouteConfig
+from router.routing import ComboRuntime, DeploymentRuntime, RouteConfig, TierRuntime
 
 
 @pytest.fixture
@@ -98,3 +98,37 @@ def test_deployment_is_active_returns_missing_env():
 def test_active_deployment_ids_filters_by_env(route_config):
     env = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
     assert active_deployment_ids(route_config, env) == {"ollama-cloud.kimi-k2.7-code"}
+
+
+def test_tier_combo_entries_appear_in_catalog():
+    config = RouteConfig(
+        combos={
+            "coder": ComboRuntime(
+                strategy="score",
+                candidates=("dep-a",),
+                tiers={
+                    "fast": TierRuntime(
+                        id="fast",
+                        candidates=("dep-b",),
+                        strategy="score",
+                    ),
+                },
+            ),
+        },
+        deployments={
+            "dep-a": DeploymentRuntime(provider="p", connection="c1", model="m", context_length=1000),
+            "dep-b": DeploymentRuntime(provider="p", connection="c2", model="m", context_length=2000),
+        },
+    )
+    entries = build_live_model_catalog(config, view="all", env={})
+    ids = {entry["id"] for entry in entries}
+
+    assert "coder" in ids
+    assert "coder:fast" in ids
+    assert f"{ids!r}"
+    coder_entry = next(e for e in entries if e["id"] == "coder")
+    tier_entry = next(e for e in entries if e["id"] == "coder:fast")
+    assert coder_entry["gateway"]["strategy"] == "score"
+    assert tier_entry["gateway"]["strategy"] == "score"
+    assert "dep-a" in coder_entry["gateway"]["candidates"]
+    assert "dep-b" in tier_entry["gateway"]["candidates"]

@@ -52,21 +52,21 @@ combos:
       stability: 0.15
       connection_density: 0.1
       priority: 0.1
-  coder-fast:
-    strategy: score
-    candidates:
-    - ollama-cloud.deepseek-v4-flash
-    - deepseek-api.deepseek-v4-flash
-    - opencode-go.deepseek-v4-flash
-    - opencode-go.kimi-k2.6
-    task: quick-build
-    scoring:
-      health: 0.3
-      latency: 0.2
-      quota: 0.15
-      stability: 0.15
-      connection_density: 0.1
-      priority: 0.1
+    tiers:
+      fast:
+        candidates:
+        - ollama-cloud.deepseek-v4-flash
+        - deepseek-api.deepseek-v4-flash
+        - opencode-go.deepseek-v4-flash
+        - opencode-go.kimi-k2.6
+        scoring:
+          health: 0.3
+          latency: 0.2
+          quota: 0.15
+          stability: 0.15
+          connection_density: 0.1
+          priority: 0.1
+        task: quick-build
   vision:
     strategy: score
     candidates:
