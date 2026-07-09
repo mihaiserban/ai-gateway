@@ -156,6 +156,7 @@ deployments:
     - chat
     - coding
     - fast
+    - vision
     context_length: 128000
     priority: 10
     stability: 0.85
@@ -253,6 +254,7 @@ deployments:
     - chat
     - coding
     - fast
+    - vision
     context_length: 128000
     priority: 40
     stability: 0.7
