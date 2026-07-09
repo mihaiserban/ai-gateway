@@ -25,6 +25,16 @@ from router.routing_state import GatewayRoutingState
 from router.sessions import MemorySessionStore, RedisSessionStore, SessionStore
 from router.usage_events import HttpUsageEventSink, UsageEvent, extract_usage, fingerprint
 
+
+def _strip_reasoning_content(body: dict) -> None:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return
+    for msg in messages:
+        if isinstance(msg, dict):
+            msg.pop("reasoning_content", None)
+
+
 FORWARDED_HEADERS = {"authorization", "content-type", "accept"}
 CACHE_RESPONSE_HEADERS = {
     "x-litellm-cache-hit",
@@ -196,6 +206,8 @@ def create_app(
 
         for index, deployment_id in enumerate(ordered):
             upstream_body["model"] = deployment_id
+            if deployment_id.startswith("deepseek-api."):
+                _strip_reasoning_content(upstream_body)
             if is_stream:
                 upstream_body["stream_options"] = {
                     **(upstream_body.get("stream_options") or {}),

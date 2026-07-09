@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 
 import router.main as router_main
-from router.main import _fallback_session_id, create_app
+from router.main import _fallback_session_id, _strip_reasoning_content, create_app
 
 ENV_OLLAMA = {"OLLAMA_API_BASE": "http://ollama", "OLLAMA_API_KEY": "x"}
 ENV_GO = {"OPENCODE_GO_API_BASE": "http://go", "OPENCODE_GO_API_KEY": "x"}
@@ -588,3 +588,52 @@ def test_create_app_defaults_when_no_config_file(monkeypatch, tmp_path):
     assert app.state.route_config.default_model == "coder"
     assert app.state.route_config.combos == {}
     assert app.state.route_config.deployments == {}
+
+
+def test_strip_reasoning_content_removes_from_all_messages():
+    body = {
+        "messages": [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi", "reasoning_content": "let me think..."},
+            {"role": "user", "content": "ok"},
+        ]
+    }
+    _strip_reasoning_content(body)
+    for msg in body["messages"]:
+        assert "reasoning_content" not in msg
+
+
+def test_strip_reasoning_content_handles_missing_messages():
+    _strip_reasoning_content({})
+
+
+def test_strip_reasoning_content_handles_non_dict_messages():
+    _strip_reasoning_content({"messages": ["not-a-dict"]})
+
+
+@pytest.mark.asyncio
+async def test_chat_strips_reasoning_content_for_deepseek_deployment(
+    monkeypatch, simple_route_config_path: str, upstream
+):
+    upstream.enqueue_json(status_code=503, body={"error": "unavailable"})
+    upstream.enqueue_json(status_code=503, body={"error": "unavailable"})
+    upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
+    app = _app(monkeypatch, simple_route_config_path, ENV_ALL, upstream.handler())
+
+    msg_with_reasoning = {
+        "messages": [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi", "reasoning_content": "let me think..."},
+            {"role": "user", "content": "ok"},
+        ],
+        "model": "coder",
+    }
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/v1/chat/completions", json=msg_with_reasoning)
+
+    assert response.status_code == 200
+    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
+    assert "reasoning_content" in upstream.body(0)["messages"][1]
+    assert upstream.body(1)["model"] == "deepseek-api.deepseek-v4-pro"
+    assert "reasoning_content" not in upstream.body(1)["messages"][1]
