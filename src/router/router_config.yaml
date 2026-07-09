@@ -10,7 +10,7 @@ catalog:
   default_view: all
 combos:
   explorer:
-    strategy: score
+    strategy: priority
     candidates:
     - ollama-cloud.deepseek-v4-flash
     - deepseek-api.deepseek-v4-flash
@@ -18,13 +18,13 @@ combos:
     task: explore
     scoring:
       health: 0.3
-      latency: 0.2
+      latency: 0.05
       quota: 0.15
       stability: 0.15
       connection_density: 0.1
-      priority: 0.1
+      priority: 0.3
   planner:
-    strategy: score
+    strategy: priority
     candidates:
     - ollama-cloud.glm-5.2
     - opencode-go.glm-5.2
@@ -33,13 +33,13 @@ combos:
     task: plan
     scoring:
       health: 0.3
-      latency: 0.2
+      latency: 0.05
       quota: 0.15
       stability: 0.15
       connection_density: 0.1
-      priority: 0.1
+      priority: 0.3
   coder:
-    strategy: score
+    strategy: priority
     candidates:
     - ollama-cloud.kimi-k2.7-code
     - deepseek-api.deepseek-v4-pro
@@ -47,11 +47,11 @@ combos:
     task: build
     scoring:
       health: 0.3
-      latency: 0.2
+      latency: 0.05
       quota: 0.15
       stability: 0.15
       connection_density: 0.1
-      priority: 0.1
+      priority: 0.3
     tiers:
       fast:
         candidates:
@@ -61,25 +61,25 @@ combos:
         - opencode-go.kimi-k2.6
         scoring:
           health: 0.3
-          latency: 0.2
+          latency: 0.05
           quota: 0.15
           stability: 0.15
           connection_density: 0.1
-          priority: 0.1
+          priority: 0.3
         task: quick-build
   vision:
-    strategy: score
+    strategy: priority
     candidates:
     - ollama-cloud.kimi-k2.6
     - opencode-go.kimi-k2.6
     task: vision
     scoring:
       health: 0.3
-      latency: 0.2
+      latency: 0.05
       quota: 0.15
       stability: 0.15
       connection_density: 0.1
-      priority: 0.1
+      priority: 0.3
 deployments:
   ollama-cloud.deepseek-v4-flash:
     provider: ollama
