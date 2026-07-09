@@ -147,8 +147,8 @@ combos:
         model: glm-5.2
       - connection: opencode-go
         model: glm-5.2
-      - connection: opencode-go
-        model: kimi-k2.7-code
+      - connection: ollama-cloud
+        model: kimi-k2.6
       - connection: deepseek-api
         model: deepseek-v4-pro
     scoring:

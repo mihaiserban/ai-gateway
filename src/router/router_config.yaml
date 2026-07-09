@@ -28,7 +28,7 @@ combos:
     candidates:
     - ollama-cloud.glm-5.2
     - opencode-go.glm-5.2
-    - opencode-go.kimi-k2.7-code
+    - ollama-cloud.kimi-k2.6
     - deepseek-api.deepseek-v4-pro
     task: plan
     scoring:
