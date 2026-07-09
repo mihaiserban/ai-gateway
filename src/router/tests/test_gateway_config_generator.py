@@ -111,7 +111,7 @@ def test_render_router_config_carries_router_runtime_knobs():
     assert router_config["cache_ttl_seconds"] == 600
     assert router_config["retry_base_delay"] == 0.2
     assert router_config["retry_max_delay"] == 2.0
-    assert router_config["max_concurrent_upstream"] == 0
+    assert router_config["max_concurrent_upstream"] == 50
 
 
 def test_render_litellm_config_preserves_litellm_settings():

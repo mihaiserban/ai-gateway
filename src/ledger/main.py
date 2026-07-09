@@ -37,6 +37,12 @@ create table if not exists gateway_usage_events (
 create index if not exists gateway_usage_events_timestamp_idx on gateway_usage_events(timestamp);
 create index if not exists gateway_usage_events_key_hash_idx on gateway_usage_events(key_hash);
 create index if not exists gateway_usage_events_served_model_idx on gateway_usage_events(served_model);
+create index if not exists gateway_usage_events_window_idx on gateway_usage_events(timestamp desc)
+    include (
+        served_model, provider_model, key_hash, status, cache_status,
+        latency_ms, prompt_tokens, completion_tokens, total_tokens,
+        estimated_cost_usd, error_class, fallback_count
+    );
 """
 
 

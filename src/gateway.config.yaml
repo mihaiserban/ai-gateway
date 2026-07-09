@@ -14,6 +14,7 @@ router:
   cache_ttl_seconds: 600
   retry_base_delay: 0.2
   retry_max_delay: 2.0
+  max_concurrent_upstream: 50
   quota_cooldown_seconds: 300
 
 providers:
