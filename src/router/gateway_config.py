@@ -231,7 +231,7 @@ def _build_registry_models(registry: Mapping[str, Any], provider_id: str) -> dic
                 raise GatewayConfigError(f"provider {provider_id!r} model {model_id!r} pricing must be a mapping")
             for cost_key in ("input_cost_per_token", "output_cost_per_token"):
                 cost_val = pricing.get(cost_key)
-                if cost_val is not None and not isinstance(cost_val, int | float):
+                if cost_val is not None and not isinstance(cost_val, (int, float)):
                     raise GatewayConfigError(f"provider {provider_id!r} model {model_id!r} {cost_key} must be numeric")
         models[model_id] = model_body
     return models
@@ -321,9 +321,9 @@ def _make_deployment(conn: Connection, provider: Provider, model_id: str, model_
     if isinstance(pricing, Mapping):
         in_raw = pricing.get("input_cost_per_token")
         out_raw = pricing.get("output_cost_per_token")
-        if isinstance(in_raw, int | float) and not isinstance(in_raw, bool):
+        if isinstance(in_raw, (int, float)) and not isinstance(in_raw, bool):
             input_cost = float(in_raw)
-        if isinstance(out_raw, int | float) and not isinstance(out_raw, bool):
+        if isinstance(out_raw, (int, float)) and not isinstance(out_raw, bool):
             output_cost = float(out_raw)
     display_name = model_meta.get("display_name")
     if not isinstance(display_name, str):
@@ -420,7 +420,7 @@ def _build_scoring(raw: Any, combo_id: str) -> ScoringWeights:
     for key, value in raw.items():
         if key not in _DEFAULT_SCORING:
             raise GatewayConfigError(f"combo {combo_id!r} scoring has unknown weight {key!r}")
-        if isinstance(value, bool) or not isinstance(value, int | float):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise GatewayConfigError(f"combo {combo_id!r} scoring weight {key!r} must be numeric")
         weight = float(value)
         if not 0.0 <= weight <= 1.0:
@@ -597,6 +597,6 @@ def _int_or(data: Mapping[str, Any], key: str, *, default: int, label: str) -> i
 
 def _float_or(data: Mapping[str, Any], key: str, *, default: float, label: str) -> float:
     value = data.get(key, default)
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise GatewayConfigError(f"{label} field {key!r} must be numeric")
     return float(value)

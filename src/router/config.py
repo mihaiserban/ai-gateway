@@ -127,7 +127,7 @@ def _load_scoring(raw: Any) -> ScoringWeights | None:
         ("priority", 0.10),
     ):
         value = raw.get(key, default)
-        if isinstance(value, int | float) and not isinstance(value, bool):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
             kwargs[key] = float(value)
         else:
             kwargs[key] = default
@@ -171,7 +171,7 @@ def _load_deployments(raw: dict[str, Any]) -> dict[str, DeploymentRuntime]:
 
 
 def _optional_float(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
 
@@ -194,7 +194,7 @@ def _int_or_default(data: Mapping[str, Any], key: str, default: int) -> int:
 
 def _float_or_default(data: Mapping[str, Any], key: str, default: float) -> float:
     value = data.get(key, default)
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return default
     return float(value)
 
