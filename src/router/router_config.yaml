@@ -42,6 +42,7 @@ combos:
     strategy: priority
     candidates:
     - ollama-cloud.kimi-k2.7-code
+    - ollama-cloud.glm-5.2
     - opencode-go.kimi-k2.7-code
     - deepseek-api.deepseek-v4-pro
     task: build
