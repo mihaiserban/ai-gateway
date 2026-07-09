@@ -127,9 +127,9 @@ combos:
     candidates:
       - connection: ollama-cloud
         model: deepseek-v4-flash
-      - connection: deepseek-api
-        model: deepseek-v4-flash
       - connection: opencode-go
+        model: deepseek-v4-flash
+      - connection: deepseek-api
         model: deepseek-v4-flash
     scoring:
       health: 0.30
@@ -147,10 +147,10 @@ combos:
         model: glm-5.2
       - connection: opencode-go
         model: glm-5.2
-      - connection: deepseek-api
-        model: deepseek-v4-pro
       - connection: opencode-go
         model: kimi-k2.7-code
+      - connection: deepseek-api
+        model: deepseek-v4-pro
     scoring:
       health: 0.30
       latency: 0.05
@@ -165,10 +165,10 @@ combos:
     candidates:
       - connection: ollama-cloud
         model: kimi-k2.7-code
-      - connection: deepseek-api
-        model: deepseek-v4-pro
       - connection: opencode-go
         model: kimi-k2.7-code
+      - connection: deepseek-api
+        model: deepseek-v4-pro
     scoring:
       health: 0.30
       latency: 0.05
@@ -182,12 +182,12 @@ combos:
         candidates:
           - connection: ollama-cloud
             model: deepseek-v4-flash
-          - connection: deepseek-api
-            model: deepseek-v4-flash
           - connection: opencode-go
             model: deepseek-v4-flash
           - connection: opencode-go
             model: kimi-k2.6
+          - connection: deepseek-api
+            model: deepseek-v4-flash
         scoring:
           health: 0.30
           latency: 0.05

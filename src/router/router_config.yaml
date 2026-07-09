@@ -13,8 +13,8 @@ combos:
     strategy: priority
     candidates:
     - ollama-cloud.deepseek-v4-flash
-    - deepseek-api.deepseek-v4-flash
     - opencode-go.deepseek-v4-flash
+    - deepseek-api.deepseek-v4-flash
     task: explore
     scoring:
       health: 0.3
@@ -28,8 +28,8 @@ combos:
     candidates:
     - ollama-cloud.glm-5.2
     - opencode-go.glm-5.2
-    - deepseek-api.deepseek-v4-pro
     - opencode-go.kimi-k2.7-code
+    - deepseek-api.deepseek-v4-pro
     task: plan
     scoring:
       health: 0.3
@@ -42,8 +42,8 @@ combos:
     strategy: priority
     candidates:
     - ollama-cloud.kimi-k2.7-code
-    - deepseek-api.deepseek-v4-pro
     - opencode-go.kimi-k2.7-code
+    - deepseek-api.deepseek-v4-pro
     task: build
     scoring:
       health: 0.3
@@ -56,9 +56,9 @@ combos:
       fast:
         candidates:
         - ollama-cloud.deepseek-v4-flash
-        - deepseek-api.deepseek-v4-flash
         - opencode-go.deepseek-v4-flash
         - opencode-go.kimi-k2.6
+        - deepseek-api.deepseek-v4-flash
         scoring:
           health: 0.3
           latency: 0.05
