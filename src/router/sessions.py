@@ -30,7 +30,10 @@ class MemorySessionStore:
         return value
 
     async def set(self, session_id: str, value: dict[str, Any], ttl_seconds: int) -> None:
-        self._sessions[session_id] = (value, self._clock() + ttl_seconds)
+        now = self._clock()
+        if len(self._sessions) > 256:
+            self._sessions = {k: v for k, v in self._sessions.items() if now < v[1]}
+        self._sessions[session_id] = (value, now + ttl_seconds)
 
 
 class RedisSessionStore:

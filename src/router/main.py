@@ -91,6 +91,7 @@ def create_app(
         await _aclose_if_present(app.state.usage_sink)
         await _aclose_if_present(app.state.session_store)
         await _aclose_if_present(getattr(app.state, "redis_stats_collector", None))
+        await _aclose_if_present(getattr(app.state, "redis_client", None))
 
     app.router.lifespan_context = lifespan
 
