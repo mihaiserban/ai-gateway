@@ -28,23 +28,23 @@ providers:
         deepseek-v4-flash:
           display_name: DeepSeek V4 Flash
           capabilities: [chat, coding, fast]
-          context_length: 128000
+          context_length: 1048576
         glm-5.2:
           display_name: GLM 5.2
           capabilities: [chat, coding, reasoning]
-          context_length: 128000
+          context_length: 1000000
         kimi-k2.7-code:
           display_name: Kimi K2.7 Code
           capabilities: [chat, coding]
-          context_length: 128000
+          context_length: 262144
         deepseek-v4-pro:
           display_name: DeepSeek V4 Pro
           capabilities: [chat, coding, reasoning]
-          context_length: 128000
+          context_length: 524288
         kimi-k2.6:
           display_name: Kimi K2.6
           capabilities: [chat, coding, fast, vision]
-          context_length: 128000
+          context_length: 262144
 
   deepseek:
     adapter: litellm
@@ -55,14 +55,14 @@ providers:
         deepseek-v4-flash:
           display_name: DeepSeek V4 Flash
           capabilities: [chat, coding, fast]
-          context_length: 128000
+          context_length: 1048576
           pricing:
             input_cost_per_token: 0.00000014
             output_cost_per_token: 0.00000028
         deepseek-v4-pro:
           display_name: DeepSeek V4 Pro
           capabilities: [chat, coding, reasoning]
-          context_length: 128000
+          context_length: 1048576
           pricing:
             input_cost_per_token: 0.00000028
             output_cost_per_token: 0.00000056
@@ -79,19 +79,19 @@ providers:
         deepseek-v4-flash:
           display_name: DeepSeek V4 Flash
           capabilities: [chat, coding, fast]
-          context_length: 128000
+          context_length: 1048576
         glm-5.2:
           display_name: GLM 5.2
           capabilities: [chat, coding, reasoning]
-          context_length: 128000
+          context_length: 1000000
         kimi-k2.7-code:
           display_name: Kimi K2.7 Code
           capabilities: [chat, coding]
-          context_length: 128000
+          context_length: 262144
         kimi-k2.6:
           display_name: Kimi K2.6
           capabilities: [chat, coding, fast, vision]
-          context_length: 128000
+          context_length: 262144
 
 connections:
   ollama-cloud:
