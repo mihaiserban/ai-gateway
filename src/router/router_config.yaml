@@ -28,7 +28,6 @@ combos:
     candidates:
     - ollama-cloud.glm-5.2
     - opencode-go.glm-5.2
-    - ollama-cloud.kimi-k2.6
     - deepseek-api.deepseek-v4-pro
     task: plan
     scoring:
@@ -58,7 +57,6 @@ combos:
         candidates:
         - ollama-cloud.deepseek-v4-flash
         - opencode-go.deepseek-v4-flash
-        - opencode-go.kimi-k2.6
         - deepseek-api.deepseek-v4-flash
         scoring:
           health: 0.3
@@ -110,7 +108,7 @@ deployments:
     - chat
     - coding
     - reasoning
-    context_length: 1000000
+    context_length: 976000
     priority: 10
     stability: 0.85
     max_concurrent: 8
@@ -141,7 +139,7 @@ deployments:
     - chat
     - coding
     - reasoning
-    context_length: 524288
+    context_length: 1048576
     priority: 10
     stability: 0.85
     max_concurrent: 8
