@@ -9,6 +9,7 @@ MAKEFLAGS += --no-print-directory
 
 COMPOSE_DIR := src
 COMPOSE := docker compose -f $(COMPOSE_DIR)/docker-compose.yml
+POSTGRES_VOLUME := ai-gateway_postgres_data
 
 .PHONY: help
 help: ## Show this help
@@ -25,15 +26,19 @@ regen-opencode: ## Sync the gateway catalog into ~/.config/opencode/opencode.jso
 .PHONY: regen-all
 regen-all: regen regen-opencode ## Regenerate configs and sync opencode models
 
+.PHONY: init-volumes
+init-volumes: ## Create the external Postgres volume if it does not exist
+	@docker volume inspect $(POSTGRES_VOLUME) >/dev/null 2>&1 || docker volume create $(POSTGRES_VOLUME)
+
 .PHONY: redeploy
-redeploy: ## Build and (re)start the full stack
+redeploy: init-volumes ## Build and (re)start the full stack
 	$(COMPOSE) up -d --build
 
 .PHONY: regen-redeploy
 regen-redeploy: regen redeploy ## Regenerate configs, then redeploy the full stack
 
 .PHONY: update
-update: ## Pull fresh images and redeploy the full stack
+update: init-volumes ## Pull fresh images and redeploy the full stack
 	$(COMPOSE) pull
 	$(COMPOSE) up -d --build
 
@@ -111,3 +116,4 @@ down-volumes: ## WARNING: stop and remove containers AND named volumes
 	@echo "This will delete Postgres data, Redis data, virtual keys, and spend history."
 	@read -p "Type 'delete-everything' to continue: " confirm && [ "$$confirm" = "delete-everything" ]
 	$(COMPOSE) down -v
+	docker volume rm $(POSTGRES_VOLUME)

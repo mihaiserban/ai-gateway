@@ -134,4 +134,8 @@ services:
 
 volumes:
   postgres_data:
+    # Keep ledger/LiteLLM state outside the Compose project lifecycle. This
+    # reuses the volume created by older ai-gateway Compose deployments.
+    name: ai-gateway_postgres_data
+    external: true
   redis_data:

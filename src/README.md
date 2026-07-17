@@ -76,9 +76,16 @@ connection instead of reusing the cloud deployment ids.
 Start it:
 
 ```bash
+docker volume inspect ai-gateway_postgres_data >/dev/null 2>&1 || \
+  docker volume create ai-gateway_postgres_data
 docker compose up -d --build
 docker compose logs -f sticky-router litellm
 ```
+
+The external `ai-gateway_postgres_data` volume stores LiteLLM state and the
+usage ledger. It survives removal and recreation of the Compose project. An
+existing deployment already using the default `ai-gateway_postgres_data`
+volume is adopted in place, so its rows do not need to be copied.
 
 ## Agent Endpoint
 
@@ -228,6 +235,12 @@ The ledger stores hashed key/session identifiers, model aliases, provider model,
 status, latency, token counts when upstream returns them, estimated cost when
 pricing is configured, cache status, and fallback metadata. It does not store
 prompt bodies, response bodies, raw bearer tokens, or raw session IDs.
+
+The `gateway_usage_events` table is stored in the external
+`ai-gateway_postgres_data` Docker volume, not in the `usage-ledger` container.
+Rebuilding or recreating either application container therefore keeps the
+statistics. Do not remove that volume unless you intend to erase the ledger,
+LiteLLM virtual keys, budgets, and spend history.
 
 Inspect recent rows:
 

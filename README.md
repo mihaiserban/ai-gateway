@@ -172,6 +172,13 @@ status, latency, token counts when upstream returns them, estimated cost when
 pricing is configured, cache status, and fallback metadata. It does not store
 prompt bodies, response bodies, raw bearer tokens, or raw session IDs.
 
+Ledger rows live in Postgres on the external Docker volume
+`ai-gateway_postgres_data`. Create it once before the first deployment with
+`make init-volumes`; `make redeploy` and `make update` also create it when
+missing. Normal container recreation reuses it. Because the volume is external
+to the Compose project, removing and recreating the containers or project does
+not remove ledger history. Only `make down-volumes` deliberately deletes it.
+
 Inspect recent rows:
 
 ```bash
