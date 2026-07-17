@@ -512,6 +512,12 @@ cold routing without failing the upstream chat request.
 Quality checks:
 
 ```bash
+make check
+```
+
+Equivalent individual commands:
+
+```bash
 python3 -m pytest -q
 node --test src/clients/opencode_plugin/index.test.mjs
 python3 -m ruff check .
@@ -546,6 +552,10 @@ make health              # show service status + healthz/readyz
 make logs                # tail sticky-router and litellm logs
 VIRTUAL_KEY=... make smoke
 ```
+
+For contributor navigation, see [docs/AGENT_CODEMAP.md](docs/AGENT_CODEMAP.md).
+For the current-vs-historical documentation map, see
+[docs/README.md](docs/README.md).
 
 Manual equivalents for reference:
 

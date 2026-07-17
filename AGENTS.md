@@ -21,7 +21,20 @@ python3 -m ruff format --check .
 python3 -m mypy
 ```
 
+`make check` runs the standard Python tests, OpenCode plugin tests, Ruff,
+format check, and mypy. Use the narrower Makefile targets for focused
+iteration.
+
 Run the full test/lint suite **once before committing or after significant changes**, not after every minor command. Quick iterations and debugging do not need repeated lint/type-check passes.
+
+## Code navigation
+
+The codebase-memory MCP project name is
+`Users-mitzuuuu-code-personal-agent-ai-gateway`. Use graph tools first for code
+discovery, then `rg` for literal strings, configs, and docs.
+
+See [docs/AGENT_CODEMAP.md](docs/AGENT_CODEMAP.md) for the main code areas,
+their ownership boundaries, and the tests that cover each workflow.
 
 The human-edited config is `src/gateway.config.yaml`. After changing it, regenerate runtime YAML:
 

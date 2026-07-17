@@ -26,6 +26,33 @@ regen-opencode: ## Sync the gateway catalog into ~/.config/opencode/opencode.jso
 .PHONY: regen-all
 regen-all: regen regen-opencode ## Regenerate configs and sync opencode models
 
+.PHONY: test
+test: ## Run the Python test suite
+	python3 -m pytest -q
+
+.PHONY: test-node
+test-node: ## Run the OpenCode plugin tests
+	node --test src/clients/opencode_plugin/index.test.mjs
+
+.PHONY: lint
+lint: ## Run Ruff lint checks
+	python3 -m ruff check .
+
+.PHONY: format-check
+format-check: ## Check Python formatting
+	python3 -m ruff format --check .
+
+.PHONY: type
+type: ## Run mypy type checks
+	python3 -m mypy
+
+.PHONY: coverage
+coverage: ## Run Python tests with the coverage gate
+	python3 -m pytest --cov -q
+
+.PHONY: check
+check: test test-node lint format-check type ## Run the full local developer check suite
+
 .PHONY: init-volumes
 init-volumes: ## Create the external Postgres volume if it does not exist
 	@docker volume inspect $(POSTGRES_VOLUME) >/dev/null 2>&1 || docker volume create $(POSTGRES_VOLUME)
