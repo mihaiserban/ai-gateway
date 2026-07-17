@@ -48,11 +48,15 @@ Generated files such as `src/litellm.config.yaml` and `src/router/router_config.
 
 The Docker Compose file lives in `src/`. On the NAS the project is typically checked out under `/volume1/docker/ai-gateway`; on a dev machine use the repo's `src/` directory. Run `docker compose` from whichever directory holds the active `.env`.
 
+Do not assume `make` is installed on the NAS. Use the direct `python3` and
+`docker compose` commands in the runbook for NAS work. Full rebuilds on the NAS
+should disable BuildKit for compatibility.
+
 Full rebuild after router or LiteLLM config/code changes:
 
 ```bash
 python3 src/scripts/generate_configs.py   # only if gateway.config.yaml changed
-docker compose up -d --build
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 docker compose logs -f sticky-router litellm
 ```
 

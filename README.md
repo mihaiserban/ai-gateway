@@ -174,10 +174,10 @@ prompt bodies, response bodies, raw bearer tokens, or raw session IDs.
 
 Ledger rows live in Postgres on the external Docker volume
 `ai-gateway_postgres_data`. Create it once before the first deployment with
-`make init-volumes`; `make redeploy` and `make update` also create it when
-missing. Normal container recreation reuses it. Because the volume is external
-to the Compose project, removing and recreating the containers or project does
-not remove ledger history. Only `make down-volumes` deliberately deletes it.
+`docker volume create ai-gateway_postgres_data` if it does not already exist.
+Normal container recreation reuses it. Because the volume is external to the
+Compose project, removing and recreating the containers or project does not
+remove ledger history. Only explicitly removing the Docker volume deletes it.
 
 Inspect recent rows:
 
@@ -336,7 +336,9 @@ From a NAS or other Docker host:
 cd src
 cp .env.example .env
 # edit .env with real secrets
-docker compose up -d --build
+docker volume inspect ai-gateway_postgres_data >/dev/null 2>&1 || \
+  docker volume create ai-gateway_postgres_data
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 docker compose logs -f sticky-router litellm
 ```
 
@@ -509,7 +511,7 @@ useful for tests and local development, but production should use Redis.
 Transient Redis session read or write failures are logged and fall back to
 cold routing without failing the upstream chat request.
 
-Quality checks:
+Quality checks on a development machine:
 
 ```bash
 make check
@@ -533,24 +535,18 @@ python3 -m pytest --cov -q
 
 ## Operations
 
-The NAS runbook in `src/README.md` includes the longer operational commands for
+The NAS runbook in `src/README.md` includes the operational commands for
 setup, virtual keys, updates, backup and restore, rollback, secret rotation,
-daily spend summaries, and Tailscale-only exposure.
+daily spend summaries, and Tailscale-only exposure. Do not assume `make` is
+installed on the NAS; use the direct commands in that runbook.
 
-A `Makefile` in the repo root wraps the most common NAS operations:
+A `Makefile` in the repo root wraps common development-machine operations:
 
 ```bash
-cd /volume1/docker/ai-gateway
+cd /path/to/agent-ai-gateway
 
+make check               # run tests, lint, format check, and mypy
 make regen               # regenerate runtime configs from gateway.config.yaml
-make regen-redeploy      # regenerate configs and redeploy the full stack
-make redeploy            # rebuild and restart the full stack
-make update              # pull fresh images and redeploy
-make restart-router      # restart only the router
-make restart-litellm     # restart only LiteLLM
-make health              # show service status + healthz/readyz
-make logs                # tail sticky-router and litellm logs
-VIRTUAL_KEY=... make smoke
 ```
 
 For contributor navigation, see [docs/AGENT_CODEMAP.md](docs/AGENT_CODEMAP.md).
@@ -563,7 +559,7 @@ Manual equivalents for reference:
 cd src
 
 # Start or update
-docker compose up -d --build
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 
 # Tail logs
 docker compose logs -f sticky-router litellm

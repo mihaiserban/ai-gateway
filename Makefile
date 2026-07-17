@@ -1,6 +1,7 @@
-# AI Gateway NAS operations Makefile
+# AI Gateway local helper Makefile
 #
-# Run these from the repo root on the Docker host / NAS.
+# Run these from a development checkout where make is available.
+# The NAS does not have make; use the direct commands in src/README.md there.
 # Commands delegate to the src/ directory where docker-compose.yml lives.
 
 SHELL := /bin/bash

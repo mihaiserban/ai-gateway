@@ -78,7 +78,7 @@ Start it:
 ```bash
 docker volume inspect ai-gateway_postgres_data >/dev/null 2>&1 || \
   docker volume create ai-gateway_postgres_data
-docker compose up -d --build
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 docker compose logs -f sticky-router litellm
 ```
 
@@ -458,34 +458,47 @@ ports. The LiteLLM admin UI is not exposed by default.
 
 ## Updating
 
-From the repo root, use the provided Makefile:
+The NAS does not have `make`. Use direct commands from the repo root:
 
 ```bash
 cd /volume1/docker/ai-gateway
 
 # Regenerate runtime configs after editing gateway.config.yaml
-make regen
+python3 src/scripts/generate_configs.py
 
 # Redeploy the full stack after code/config/router changes
-make redeploy
+docker volume inspect ai-gateway_postgres_data >/dev/null 2>&1 || \
+  docker volume create ai-gateway_postgres_data
+cd src
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 
 # Regenerate + redeploy in one step after gateway.config.yaml changes
-make regen-redeploy
+cd /volume1/docker/ai-gateway
+python3 src/scripts/generate_configs.py
+cd src
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 
 # Pull fresh images and redeploy
-make update
+cd /volume1/docker/ai-gateway/src
+docker compose pull
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 
 # Restart only the router or LiteLLM when only one service changed
-make restart-router
-make restart-litellm
+cd /volume1/docker/ai-gateway/src
+docker compose restart sticky-router
+docker compose restart litellm
 
 # Tail logs, check health, or run a smoke test
-make logs
-make health
-VIRTUAL_KEY=... make smoke
+docker compose logs -f sticky-router litellm
+docker compose ps
+curl http://localhost:4100/healthz
+curl http://localhost:4100/readyz
+curl http://localhost:4100/v1/chat/completions \
+  -H "Authorization: Bearer $VIRTUAL_KEY" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: smoke-test" \
+  -d '{"messages":[{"role":"user","content":"say OK only"}],"max_tokens":80}'
 ```
-
-For the old manual commands, see the previous version of this runbook.
 
 ## Daily Spend Summary
 
@@ -560,7 +573,7 @@ docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
 docker cp backups/redis-YYYY-MM-DD.aof ai-gateway-redis:/data/appendonly.aof
 docker compose restart redis
 
-docker compose up -d --build
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 ```
 
 Keep `backups/` outside the project folder or add it to `.gitignore`.
@@ -574,7 +587,7 @@ cd /volume1/docker/ai-gateway
 docker compose down
 # Restore the previous config + .env from backup, then:
 git checkout <previous-tag>   # if the repo lives on the NAS
-docker compose up -d --build
+DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
 # If Postgres schema changed, restore from the pre-upgrade SQL dump.
 ```
 

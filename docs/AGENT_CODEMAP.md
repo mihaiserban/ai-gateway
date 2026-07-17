@@ -31,7 +31,8 @@ literals, configs, and docs.
 
 ## Commands
 
-Run the full local developer check before committing:
+Run the full local developer check before committing from a machine with
+`make`:
 
 ```bash
 make check
@@ -49,10 +50,16 @@ make coverage
 ```
 
 If `src/gateway.config.yaml` changes, regenerate committed runtime YAML before
-testing:
+testing. On a development machine:
 
 ```bash
 make regen
+```
+
+On the NAS, do not assume `make` is installed:
+
+```bash
+python3 src/scripts/generate_configs.py
 ```
 
 ## Config Rules
@@ -60,6 +67,7 @@ make regen
 - Edit `src/gateway.config.yaml` for providers, connections, combos, router
   knobs, and LiteLLM settings.
 - Do not hand-edit `src/litellm.config.yaml` or
-  `src/router/router_config.yaml`; regenerate them with `make regen`.
+  `src/router/router_config.yaml`; regenerate them with `make regen` on a
+  development machine or `python3 src/scripts/generate_configs.py` on the NAS.
 - Use LiteLLM virtual keys for smoke tests. Do not put the master key in agent
   or client configs.
