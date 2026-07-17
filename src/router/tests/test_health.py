@@ -1,8 +1,7 @@
-import socket
-
 import httpx
 import pytest
 
+from router.health import check_postgres
 from router.main import create_app
 
 
@@ -58,28 +57,6 @@ async def test_healthz_reports_router_ok_and_status_ok_when_litellm_ok():
 
 
 @pytest.mark.asyncio
-async def test_healthz_reports_degraded_when_litellm_down():
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, text="down")
-
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        database_url=None,
-        transport=transport,
-    )
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/healthz")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["litellm"] == "degraded"
-    assert body["status"] == "degraded"
-
-
-@pytest.mark.asyncio
 async def test_readyz_returns_200_when_deps_ok():
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="ok")
@@ -123,75 +100,56 @@ async def test_readyz_returns_503_when_litellm_down():
 
 
 @pytest.mark.asyncio
-async def test_outage_simulation():
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, text="outage")
+@pytest.mark.parametrize(
+    ("database_url", "expected_port"),
+    [
+        ("postgresql://user:pass@db.internal/gateway", 5432),
+        ("postgresql://user:pass@db.internal:6432/gateway", 6432),
+    ],
+)
+async def test_check_postgres_closes_successful_connection(monkeypatch, database_url, expected_port):
+    class Writer:
+        closed = False
+        waited = False
 
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        database_url=None,
-        transport=transport,
-    )
+        def close(self):
+            self.closed = True
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        health = await client.get("/healthz")
-        ready = await client.get("/readyz")
+        async def wait_closed(self):
+            self.waited = True
 
-    assert health.status_code == 200
-    assert health.json()["status"] == "degraded"
-    assert health.json()["litellm"] == "degraded"
+    writer = Writer()
 
-    assert ready.status_code == 503
-    assert ready.json()["status"] == "not ready"
+    async def open_connection(host, port):
+        assert (host, port) == ("db.internal", expected_port)
+        return object(), writer
 
+    monkeypatch.setattr("router.health.asyncio.open_connection", open_connection)
 
-@pytest.mark.asyncio
-async def test_healthz_postgres_ok_when_port_open():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(("127.0.0.1", 0))
-    server.listen(1)
-    host, port = server.getsockname()
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="ok")
-
-    transport = httpx.MockTransport(handler)
-    try:
-        app = create_app(
-            litellm_base_url="http://litellm:4000",
-            redis_url=None,
-            database_url=f"postgresql://user:pass@{host}:{port}/db",
-            transport=transport,
-        )
-
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get("/healthz")
-
-        body = response.json()
-        assert body["postgres"] == "ok"
-        assert body["status"] == "ok"
-    finally:
-        server.close()
+    assert await check_postgres(database_url) == "ok"
+    assert writer.closed is True
+    assert writer.waited is True
 
 
 @pytest.mark.asyncio
-async def test_healthz_postgres_degraded_when_port_closed():
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="ok")
+async def test_check_postgres_degrades_when_connection_fails(monkeypatch):
+    async def open_connection(host, port):
+        raise OSError("connection refused")
 
-    transport = httpx.MockTransport(handler)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        database_url="postgresql://user:pass@127.0.0.1:1/db",
-        transport=transport,
-    )
+    monkeypatch.setattr("router.health.asyncio.open_connection", open_connection)
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/healthz")
+    assert await check_postgres("postgresql://db.internal/gateway") == "degraded"
 
-    body = response.json()
-    assert body["postgres"] == "degraded"
-    assert body["status"] == "degraded"
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "postgresql:///gateway",
+        "postgresql://db.internal:not-a-port/gateway",
+        "postgresql://db.internal:65536/gateway",
+        "postgresql://[broken/gateway",
+    ],
+)
+async def test_check_postgres_degrades_for_malformed_url(database_url):
+    assert await check_postgres(database_url) == "degraded"

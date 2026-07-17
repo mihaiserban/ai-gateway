@@ -6,8 +6,10 @@ from typing import Any
 
 import psycopg
 from fastapi import FastAPI
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
+
+POSTGRES_INTEGER_MAX = 2_147_483_647
 
 SCHEMA = """
 create table if not exists gateway_usage_events (
@@ -49,7 +51,7 @@ create index if not exists gateway_usage_events_window_idx on gateway_usage_even
 class UsageEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    timestamp: float
+    timestamp: float = Field(ge=0, allow_inf_nan=False)
     path: str
     method: str
     key_hash: str
@@ -60,13 +62,13 @@ class UsageEvent(BaseModel):
     provider_model: str
     reason: str
     status: str
-    latency_ms: int
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-    estimated_cost_usd: float | None = None
+    latency_ms: int = Field(ge=0, le=POSTGRES_INTEGER_MAX)
+    prompt_tokens: int | None = Field(default=None, ge=0, le=POSTGRES_INTEGER_MAX)
+    completion_tokens: int | None = Field(default=None, ge=0, le=POSTGRES_INTEGER_MAX)
+    total_tokens: int | None = Field(default=None, ge=0, le=POSTGRES_INTEGER_MAX)
+    estimated_cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     cache_status: str
-    fallback_count: int
+    fallback_count: int = Field(ge=0, le=POSTGRES_INTEGER_MAX)
     fallback_from: str | None = None
     error_class: str | None = None
     stream: bool

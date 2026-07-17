@@ -31,6 +31,8 @@ def load_route_config(config_path: str | None = None) -> RouteConfig:
 
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
+    if not isinstance(data, dict):
+        raise ConfigValidationError("router config must be a mapping")
 
     return _route_config_from_dict(data)
 
@@ -222,6 +224,8 @@ def cross_check_litellm(config: RouteConfig, litellm_path: str | None = None) ->
 
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
+    if not isinstance(data, dict):
+        raise ConfigValidationError("litellm config must be a mapping")
 
     model_list = data.get("model_list") or []
     litellm_names: set[str] = set()

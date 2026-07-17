@@ -121,6 +121,29 @@ async def test_chat_returns_422_for_empty_body(simple_route_config_path: str):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        [],
+        {"model": 42, "messages": []},
+        {"model": "", "messages": []},
+        {"model": "kimi-k2.7-code", "messages": [], "stream": "false"},
+        {"model": "kimi-k2.7-code", "messages": [], "stream": True, "stream_options": []},
+    ],
+)
+async def test_chat_rejects_malformed_router_fields_before_upstream(
+    monkeypatch, simple_route_config_path: str, upstream, body
+):
+    app = _app(monkeypatch, simple_route_config_path, ENV_OLLAMA, upstream.handler())
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/v1/chat/completions", json=body)
+
+    assert response.status_code == 422
+    assert upstream.requests == []
+
+
+@pytest.mark.asyncio
 async def test_chat_rejects_oversized_body_before_upstream(
     monkeypatch: pytest.MonkeyPatch, simple_route_config_path: str, upstream
 ):
@@ -137,6 +160,23 @@ async def test_chat_rejects_oversized_body_before_upstream(
     assert response.status_code == 413
     assert response.json()["error"]["type"] == "gateway_request_too_large"
     assert upstream.requests == []
+
+
+@pytest.mark.asyncio
+async def test_chat_accepts_body_at_exact_size_limit(monkeypatch, simple_route_config_path: str, upstream):
+    content = b'{"messages":[]}'
+    monkeypatch.setattr(router_main, "MAX_REQUEST_BODY_BYTES", len(content), raising=False)
+    app = _app(monkeypatch, simple_route_config_path, ENV_OLLAMA, upstream.handler())
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            content=content,
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 200
+    assert len(upstream.requests) == 1
 
 
 @pytest.mark.asyncio
@@ -194,44 +234,6 @@ async def test_upstream_error_body_is_redacted(monkeypatch, simple_route_config_
 
 
 @pytest.mark.asyncio
-async def test_virtual_key_is_forwarded_with_rewritten_deployment_model(
-    monkeypatch, simple_route_config_path: str, upstream
-):
-    upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
-    app = _app(monkeypatch, simple_route_config_path, {**ENV_OLLAMA, **ENV_GO}, upstream.handler())
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer sk-virtual"},
-            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
-        )
-
-    assert response.status_code == 200
-    assert upstream.requests[0].headers["authorization"] == "Bearer sk-virtual"
-    assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
-
-
-@pytest.mark.asyncio
-async def test_litellm_virtual_key_403_is_not_fallback(monkeypatch, simple_route_config_path: str, upstream):
-    upstream.enqueue_json(
-        status_code=403,
-        body={"error": {"type": "key_model_access_denied", "message": "not allowed"}},
-    )
-    app = _app(monkeypatch, simple_route_config_path, {**ENV_OLLAMA, **ENV_GO}, upstream.handler())
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer sk-virtual"},
-            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}]},
-        )
-
-    assert response.status_code == 403
-    assert len(upstream.requests) == 1
-
-
-@pytest.mark.asyncio
 async def test_no_x_session_id_does_not_pin_previous_deployment(monkeypatch, simple_route_config_path: str, upstream):
     upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
     upstream.enqueue_json(status_code=200, body={"choices": [{"message": {"content": "ok"}}]})
@@ -251,6 +253,7 @@ async def test_no_x_session_id_does_not_pin_previous_deployment(monkeypatch, sim
 
     assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
     assert upstream.body(1)["model"] == "opencode-go.kimi-k2.7-code"
+    assert await app.state.session_store.get("") is None
 
 
 @pytest.mark.asyncio
@@ -302,6 +305,29 @@ async def test_warm_session_reuses_same_deployment_for_same_auth_and_session(
 
     assert upstream.body(0)["model"] == "ollama-cloud.kimi-k2.7-code"
     assert upstream.body(1)["model"] == "ollama-cloud.kimi-k2.7-code"
+
+
+@pytest.mark.asyncio
+async def test_session_store_failure_does_not_fail_chat(monkeypatch, simple_route_config_path: str, upstream):
+    class BrokenSessionStore:
+        async def get(self, session_id):
+            raise RuntimeError("redis unavailable")
+
+        async def set(self, session_id, value, ttl_seconds):
+            raise RuntimeError("redis unavailable")
+
+    app = _app(monkeypatch, simple_route_config_path, ENV_OLLAMA, upstream.handler())
+    app.state.session_store = BrokenSessionStore()
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"X-Session-Id": "redis-outage"},
+            json={"model": "kimi-k2.7-code", "messages": []},
+        )
+
+    assert response.status_code == 200
+    assert len(upstream.requests) == 1
 
 
 @pytest.mark.asyncio

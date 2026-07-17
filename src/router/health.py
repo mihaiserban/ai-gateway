@@ -36,12 +36,12 @@ async def check_redis(app_state: Any) -> str:
 async def check_postgres(database_url: str | None) -> str:
     if not database_url:
         return "disabled"
-    parsed = urlparse(database_url)
-    host = parsed.hostname
-    port = parsed.port or 5432
-    if not host:
-        return "degraded"
     try:
+        parsed = urlparse(database_url)
+        host = parsed.hostname
+        port = parsed.port or 5432
+        if not host:
+            return "degraded"
         _, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port),
             timeout=HEALTH_TIMEOUT,

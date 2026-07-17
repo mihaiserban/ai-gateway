@@ -421,7 +421,8 @@ auth, virtual-key budget, virtual-key model allowlist, and malformed request
 errors do not fallback.
 
 Default session TTL is 600 seconds. See [docs/redis.md](../docs/redis.md) for
-full Redis architecture and cache behavior.
+full Redis architecture and cache behavior. Transient Redis session failures
+are logged and degrade to cold routing instead of failing chat requests.
 
 ## Synology Container Manager
 
@@ -628,7 +629,8 @@ directly to the public internet.
 
 ```bash
 python3 -m pip install -r router/requirements-dev.txt
-PYTHONPATH=. python3 -m pytest router/tests -q
+PYTHONPATH=. python3 -m pytest router/tests ledger/tests -q
+cd .. && node --test src/clients/opencode_plugin/index.test.mjs
 ```
 
 Back up the Docker volumes before major upgrades:

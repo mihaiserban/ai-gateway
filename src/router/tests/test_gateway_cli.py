@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts import gateway
 
 
@@ -14,7 +16,8 @@ def test_models_command_prints_full_catalog(capsys):
     assert "kimi-k2.7-code" in out
 
 
-def test_setup_dry_run_does_not_write(tmp_path, capsys):
+@pytest.mark.parametrize("dry_run_args", [[], ["--dry-run"]], ids=["default", "explicit"])
+def test_setup_dry_run_does_not_write(tmp_path, capsys, dry_run_args):
     target = tmp_path / "opencode.json"
     plugin_dir = tmp_path / "plugins"
     exit_code = gateway.main(
@@ -29,30 +32,7 @@ def test_setup_dry_run_does_not_write(tmp_path, capsys):
             str(target),
             "--plugin-dir",
             str(plugin_dir),
-            "--dry-run",
-        ]
-    )
-    assert exit_code == 0
-    assert not target.exists()
-    assert not plugin_dir.exists()
-    assert "localhost:4100/v1" in capsys.readouterr().out
-
-
-def test_setup_defaults_to_dry_run_does_not_write(tmp_path, capsys):
-    target = tmp_path / "opencode.json"
-    plugin_dir = tmp_path / "plugins"
-    exit_code = gateway.main(
-        [
-            "setup",
-            "opencode",
-            "--mode",
-            "local-plugin",
-            "--catalog",
-            "all",
-            "--path",
-            str(target),
-            "--plugin-dir",
-            str(plugin_dir),
+            *dry_run_args,
         ]
     )
     assert exit_code == 0

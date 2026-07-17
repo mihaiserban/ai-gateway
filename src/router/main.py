@@ -41,6 +41,7 @@ CACHE_RESPONSE_HEADERS = {
     "x-litellm-cache-key",
 }
 MAX_REQUEST_BODY_BYTES = int(os.environ.get("GATEWAY_MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024)))
+UPSTREAM_SEMAPHORE_EXTENSION = "gateway.upstream_semaphore"
 
 logger = logging.getLogger("router")
 logger.setLevel(logging.INFO)
@@ -155,14 +156,22 @@ def create_app(
             )
         if not isinstance(body, dict):
             return JSONResponse(status_code=422, content={"error": "request body must be a JSON object"})
+        model_value = body.get("model")
+        if "model" in body and (not isinstance(model_value, str) or not model_value):
+            return JSONResponse(status_code=422, content={"error": "model must be a non-empty string when provided"})
+        stream_value = body.get("stream", False)
+        if not isinstance(stream_value, bool):
+            return JSONResponse(status_code=422, content={"error": "stream must be a boolean when provided"})
+        stream_options = body.get("stream_options")
+        if stream_options is not None and not isinstance(stream_options, dict):
+            return JSONResponse(status_code=422, content={"error": "stream_options must be an object when provided"})
 
         config = app.state.route_config
         state = app.state.routing_state
         now = time.time()
         auth = request.headers.get("authorization")
         x_session_id = request.headers.get("X-Session-Id")
-        requested_model_raw = body.get("model")
-        requested_model = requested_model_raw if isinstance(requested_model_raw, str) else None
+        requested_model = model_value if isinstance(model_value, str) else None
 
         resolved = resolve_model_request(requested_model, config, state, now=now)
 
@@ -186,7 +195,7 @@ def create_app(
             )
 
         upstream_body = redact_payload(body)
-        is_stream = bool(body.get("stream"))
+        is_stream = stream_value
 
         # Warm-session stickiness only applies when an explicit X-Session-Id is
         # present. The fallback session id (prompt-derived) is used for usage
@@ -253,8 +262,10 @@ def create_app(
                 # returns to the pool, but keep last_response pointing at it
                 # so the post-loop pass-through can return the upstream error
                 # body with gateway headers.
-                await response.aread()
-                await response.aclose()
+                try:
+                    await response.aread()
+                finally:
+                    await _close_upstream_response(response)
             if not should_fallback:
                 break
             if index == len(ordered) - 1:
@@ -270,17 +281,24 @@ def create_app(
             resolved, served=served_deployment, attempted=attempted, fallback_count=fallback_count
         )
 
-        if last_response is not None and _is_success(last_response):
-            await app.state.session_store.set(
-                session_key,
-                {
-                    "requested_model": resolved.requested_model,
-                    "model_kind": resolved.kind,
-                    "served_deployment": served_deployment,
-                    "timestamp": time.time(),
-                },
-                ttl_seconds=config.cache_ttl_seconds,
-            )
+        if session_key and last_response is not None and _is_success(last_response):
+            try:
+                await app.state.session_store.set(
+                    session_key,
+                    {
+                        "requested_model": resolved.requested_model,
+                        "model_kind": resolved.kind,
+                        "served_deployment": served_deployment,
+                        "timestamp": time.time(),
+                    },
+                    ttl_seconds=config.cache_ttl_seconds,
+                )
+            except asyncio.CancelledError:
+                if is_stream:
+                    await _close_upstream_response(last_response)
+                raise
+            except Exception as exc:
+                logger.warning("session_store_set_failed error_class=%s", type(exc).__name__)
 
         status = last_response.status_code if last_response is not None else 502
 
@@ -407,18 +425,26 @@ def create_app(
         body: dict[str, Any],
     ) -> httpx.Response:
         url = app.state.litellm_base_url + path
-        guard = app.state.upstream_semaphore or nullcontext()
-        async with guard:
-            req = app.state.http_client.build_request("POST", url, headers=_forward_headers(request), json=body)
-            req.extensions = {
-                "timeout": {
-                    "connect": DEFAULT_TIMEOUT_SECONDS,
-                    "read": DEFAULT_TIMEOUT_SECONDS,
-                    "write": DEFAULT_TIMEOUT_SECONDS,
-                    "pool": DEFAULT_TIMEOUT_SECONDS,
-                }
+        req = app.state.http_client.build_request("POST", url, headers=_forward_headers(request), json=body)
+        req.extensions = {
+            "timeout": {
+                "connect": DEFAULT_TIMEOUT_SECONDS,
+                "read": DEFAULT_TIMEOUT_SECONDS,
+                "write": DEFAULT_TIMEOUT_SECONDS,
+                "pool": DEFAULT_TIMEOUT_SECONDS,
             }
+        }
+        semaphore = app.state.upstream_semaphore
+        if semaphore is None:
             return cast(httpx.Response, await app.state.http_client.send(req, stream=True))
+        await semaphore.acquire()
+        try:
+            response = cast(httpx.Response, await app.state.http_client.send(req, stream=True))
+        except BaseException:
+            semaphore.release()
+            raise
+        response.extensions[UPSTREAM_SEMAPHORE_EXTENSION] = semaphore
+        return response
 
     return app
 
@@ -647,17 +673,28 @@ def _streaming_response(
                 except Exception:
                     usage_payload = None
             try:
-                if on_close is not None:
-                    await on_close(usage_payload)
-            except Exception:
-                logger.exception("streaming_usage_event_callback_failed")
-            await upstream.aclose()
+                await _close_upstream_response(upstream)
+            finally:
+                try:
+                    if on_close is not None:
+                        await on_close(usage_payload)
+                except Exception:
+                    logger.exception("streaming_usage_event_callback_failed")
 
     return StreamingResponse(
         content=body_iterator(),
         status_code=upstream.status_code,
         headers=headers,
     )
+
+
+async def _close_upstream_response(upstream: httpx.Response) -> None:
+    try:
+        await upstream.aclose()
+    finally:
+        semaphore = upstream.extensions.pop(UPSTREAM_SEMAPHORE_EXTENSION, None)
+        if isinstance(semaphore, asyncio.Semaphore):
+            semaphore.release()
 
 
 def _fallback_session_id(body: dict[str, Any], token: str | None = None) -> str:
@@ -815,7 +852,11 @@ async def _resolve_warm_deployment(
     if not x_session_id:
         return None
     session_key = _warm_session_key(x_session_id, auth)
-    session = await app.state.session_store.get(session_key)
+    try:
+        session = await app.state.session_store.get(session_key)
+    except Exception as exc:
+        logger.warning("session_store_get_failed error_class=%s", type(exc).__name__)
+        return None
     if not session:
         return None
     if session.get("requested_model") != resolved.requested_model:
