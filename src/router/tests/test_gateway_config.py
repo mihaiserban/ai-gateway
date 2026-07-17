@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from router.gateway_config import GatewayConfigError, expand_gateway_config
@@ -84,10 +86,100 @@ def test_disabled_connections_do_not_create_deployments():
     assert "ollama-cloud.kimi-k2.7-code" not in catalog.deployments
 
 
+@pytest.mark.parametrize("enabled", [None, 0, 1, "false"])
+def test_rejects_non_boolean_connection_enabled(enabled):
+    config = minimal_config()
+    config["connections"]["ollama-cloud"]["enabled"] = enabled
+
+    with pytest.raises(GatewayConfigError, match="enabled must be a bool"):
+        expand_gateway_config(config)
+
+
+@pytest.mark.parametrize("model_id", [None, 1, ""])
+def test_rejects_invalid_registry_model_id(model_id):
+    config = minimal_config()
+    config["providers"]["ollama"]["registry"]["models"] = {model_id: {}}
+    config["connections"] = {}
+    config["combos"] = {}
+
+    with pytest.raises(GatewayConfigError, match="model id must be a non-empty string"):
+        expand_gateway_config(config)
+
+
+@pytest.mark.parametrize("context_length", [True, 0, -1])
+def test_rejects_invalid_context_length(context_length):
+    config = minimal_config()
+    model = config["providers"]["ollama"]["registry"]["models"]["kimi-k2.7-code"]
+    model["context_length"] = context_length
+
+    with pytest.raises(GatewayConfigError, match="context_length must be a positive int"):
+        expand_gateway_config(config)
+
+
+@pytest.mark.parametrize("cost", [True, -0.01, math.inf, math.nan])
+def test_rejects_invalid_model_pricing(cost):
+    config = minimal_config()
+    model = config["providers"]["ollama"]["registry"]["models"]["kimi-k2.7-code"]
+    model["pricing"] = {"input_cost_per_token": cost}
+
+    with pytest.raises(GatewayConfigError, match="input_cost_per_token must be a finite non-negative number"):
+        expand_gateway_config(config)
+
+
+@pytest.mark.parametrize("stability", [-0.01, 1.01, math.inf, math.nan])
+def test_rejects_invalid_connection_stability(stability):
+    config = minimal_config()
+    config["connections"]["ollama-cloud"]["stability"] = stability
+
+    with pytest.raises(GatewayConfigError, match=r"stability must be between 0\.0 and 1\.0"):
+        expand_gateway_config(config)
+
+
+def test_rejects_negative_connection_concurrency():
+    config = minimal_config()
+    config["connections"]["ollama-cloud"]["max_concurrent"] = -1
+
+    with pytest.raises(GatewayConfigError, match="max_concurrent must be non-negative"):
+        expand_gateway_config(config)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cache_ttl_seconds", True),
+        ("cache_ttl_seconds", -1),
+        ("max_concurrent_upstream", True),
+        ("max_concurrent_upstream", -1),
+        ("quota_cooldown_seconds", -1),
+        ("retry_base_delay", -0.1),
+        ("retry_max_delay", math.inf),
+    ],
+)
+def test_rejects_invalid_router_runtime_boundaries(field, value):
+    config = minimal_config()
+    config["router"] = {field: value}
+
+    with pytest.raises(GatewayConfigError, match=rf"router\.{field}"):
+        expand_gateway_config(config)
+
+
 def test_rejects_combo_candidate_for_missing_connection():
     config = minimal_config()
     config["combos"]["coder"]["candidates"][0]["connection"] = "missing"
     with pytest.raises(GatewayConfigError, match="unknown connection"):
+        expand_gateway_config(config)
+
+
+@pytest.mark.parametrize("in_tier", [False, True])
+def test_rejects_duplicate_combo_candidates(in_tier):
+    config = minimal_config()
+    duplicate = {"connection": "ollama-cloud", "model": "kimi-k2.7-code"}
+    if in_tier:
+        config["combos"]["coder"]["tiers"] = {"fast": {"candidates": [duplicate, duplicate.copy()]}}
+    else:
+        config["combos"]["coder"]["candidates"] = [duplicate, duplicate.copy()]
+
+    with pytest.raises(GatewayConfigError, match="duplicate candidate"):
         expand_gateway_config(config)
 
 

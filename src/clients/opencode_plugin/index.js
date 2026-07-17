@@ -15,6 +15,9 @@ import path from "node:path";
 export const AgentAiGatewayPlugin = async (_input, rawOptions) => {
   const opts = resolveOptions(rawOptions);
   const providerId = opts.providerId;
+  if (typeof providerId !== "string" || !/^[a-z0-9][a-z0-9_-]*$/.test(providerId)) {
+    throw new Error("Agent AI Gateway plugin: providerId must be a lowercase slug");
+  }
   const baseURL = normalizeBaseURL(opts.baseURL);
   const apiKey = resolveApiKey(opts.apiKey);
   const catalog = opts.catalog;
@@ -265,16 +268,21 @@ function buildV2Models(entries, providerId, baseURL, modelApiKey) {
       isCombo && Array.isArray(meta.candidates) ? meta.candidates : [];
 
     // Aggregate limits/caps across combo candidates.
-    let context = meta.context_length;
-    let capabilities = meta.capabilities || [];
+    const configuredContext = meta.context_length;
+    let context =
+      Number.isFinite(configuredContext) && configuredContext > 0
+        ? configuredContext
+        : undefined;
+    let capabilities = Array.isArray(meta.capabilities) ? meta.capabilities : [];
     if (isCombo && candidates.length) {
       const memberCtxs = [];
       const memberCaps = [];
       for (const cid of candidates) {
         const m = registry[cid];
         if (!m) continue;
-        if (m.gateway?.context_length) memberCtxs.push(m.gateway.context_length);
-        if (m.gateway?.capabilities) memberCaps.push(m.gateway.capabilities);
+        const memberContext = m.gateway?.context_length;
+        if (Number.isFinite(memberContext) && memberContext > 0) memberCtxs.push(memberContext);
+        if (Array.isArray(m.gateway?.capabilities)) memberCaps.push(m.gateway.capabilities);
       }
       if (!context && memberCtxs.length) {
         context = Math.min(...memberCtxs);
@@ -293,9 +301,11 @@ function buildV2Models(entries, providerId, baseURL, modelApiKey) {
     };
 
     const pricing = meta.pricing || {};
+    const inputCost = pricing.input_cost_per_token;
+    const outputCost = pricing.output_cost_per_token;
     const cost = {
-      input: pricing.input_cost_per_token || 0,
-      output: pricing.output_cost_per_token || 0,
+      input: Number.isFinite(inputCost) && inputCost >= 0 ? inputCost : 0,
+      output: Number.isFinite(outputCost) && outputCost >= 0 ? outputCost : 0,
       cache: { read: 0, write: 0 },
     };
 

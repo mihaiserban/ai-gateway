@@ -123,6 +123,14 @@ catalog:
     assert config.catalog_default_view == "internal"
 
 
+@pytest.mark.parametrize("content", ["- not-a-mapping\n", "42\n"])
+def test_load_route_config_rejects_non_mapping_yaml(tmp_path, content):
+    cfg_path = _write_yaml(tmp_path / "router_config.yaml", content)
+
+    with pytest.raises(config_mod.ConfigValidationError, match="router config must be a mapping"):
+        config_mod.load_route_config(config_path=str(cfg_path))
+
+
 # ---------------------------------------------------------------------------
 # LiteLLM cross-check
 # ---------------------------------------------------------------------------
@@ -187,3 +195,11 @@ def test_cross_check_warns_but_does_not_crash_when_litellm_missing(tmp_path, cap
         config_mod.cross_check_litellm(config, litellm_path=str(missing))
 
     assert any("litellm" in rec.message.lower() for rec in caplog.records)
+
+
+def test_cross_check_rejects_non_mapping_litellm_yaml(tmp_path):
+    config = config_mod.load_route_config(config_path=str(_good_yaml(tmp_path)))
+    litellm_path = _write_yaml(tmp_path / "litellm.config.yaml", "- not-a-mapping\n")
+
+    with pytest.raises(config_mod.ConfigValidationError, match="litellm config must be a mapping"):
+        config_mod.cross_check_litellm(config, litellm_path=str(litellm_path))

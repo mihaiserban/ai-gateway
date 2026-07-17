@@ -41,7 +41,10 @@ class RedisSessionStore:
         raw = await self._redis.get(_key(session_id))
         if raw is None:
             return None
-        value = json.loads(raw)
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
         return value if isinstance(value, dict) else None
 
     async def set(self, session_id: str, value: dict[str, Any], ttl_seconds: int) -> None:

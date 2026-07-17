@@ -8,6 +8,7 @@ for any malformed config rather than partial state at runtime.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -214,6 +215,8 @@ def _build_registry_models(registry: Mapping[str, Any], provider_id: str) -> dic
     models_raw = _mapping(registry, "models", required=False, label=f"provider {provider_id!r} registry")
     models: dict[str, Mapping[str, Any]] = {}
     for model_id, model_body in models_raw.items():
+        if not isinstance(model_id, str) or not model_id:
+            raise GatewayConfigError(f"provider {provider_id!r} registry model id must be a non-empty string")
         if not isinstance(model_body, Mapping):
             raise GatewayConfigError(f"provider {provider_id!r} registry model {model_id!r} must be a mapping")
         # Validate known metadata fields without forbidding unknown ones.
@@ -223,16 +226,25 @@ def _build_registry_models(registry: Mapping[str, Any], provider_id: str) -> dic
                 f"provider {provider_id!r} model {model_id!r} capabilities must be a list of strings"
             )
         ctx = model_body.get("context_length")
-        if ctx is not None and not isinstance(ctx, int):
-            raise GatewayConfigError(f"provider {provider_id!r} model {model_id!r} context_length must be an int")
+        if ctx is not None and (isinstance(ctx, bool) or not isinstance(ctx, int) or ctx <= 0):
+            raise GatewayConfigError(
+                f"provider {provider_id!r} model {model_id!r} context_length must be a positive int"
+            )
         pricing = model_body.get("pricing")
         if pricing is not None:
             if not isinstance(pricing, Mapping):
                 raise GatewayConfigError(f"provider {provider_id!r} model {model_id!r} pricing must be a mapping")
             for cost_key in ("input_cost_per_token", "output_cost_per_token"):
                 cost_val = pricing.get(cost_key)
-                if cost_val is not None and not isinstance(cost_val, (int, float)):
-                    raise GatewayConfigError(f"provider {provider_id!r} model {model_id!r} {cost_key} must be numeric")
+                if cost_val is not None and (
+                    isinstance(cost_val, bool)
+                    or not isinstance(cost_val, (int, float))
+                    or not math.isfinite(float(cost_val))
+                    or cost_val < 0
+                ):
+                    raise GatewayConfigError(
+                        f"provider {provider_id!r} model {model_id!r} {cost_key} must be a finite non-negative number"
+                    )
         models[model_id] = model_body
     return models
 
@@ -248,14 +260,20 @@ def _build_connections(raw: Mapping[str, Any], providers: dict[str, Provider]) -
         pid = _required_str(body, "provider", f"connection {cid!r}")
         if pid not in providers:
             raise GatewayConfigError(f"connection {cid!r} references unknown provider {pid!r}")
-        enabled = bool(body.get("enabled", True))
+        enabled = body.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise GatewayConfigError(f"connection {cid!r} enabled must be a bool")
         priority = _int_or(body, "priority", default=100, label=f"connection {cid!r}")
         stability = _float_or(body, "stability", default=0.8, label=f"connection {cid!r}")
+        if not math.isfinite(stability) or not 0.0 <= stability <= 1.0:
+            raise GatewayConfigError(f"connection {cid!r} stability must be between 0.0 and 1.0")
         max_concurrent_raw = body.get("max_concurrent")
         max_concurrent: int | None
         if max_concurrent_raw is None:
             max_concurrent = None
         elif isinstance(max_concurrent_raw, int) and not isinstance(max_concurrent_raw, bool):
+            if max_concurrent_raw < 0:
+                raise GatewayConfigError(f"connection {cid!r} max_concurrent must be non-negative")
             max_concurrent = max_concurrent_raw
         else:
             raise GatewayConfigError(f"connection {cid!r} max_concurrent must be an int or omitted")
@@ -389,12 +407,17 @@ def _build_combos(
         if not isinstance(candidates_raw, list) or not candidates_raw:
             raise GatewayConfigError(f"combo {combo_id!r} candidates must be a non-empty list")
         candidates: list[ComboCandidate] = []
+        seen_candidates: set[tuple[str, str]] = set()
         for cand in candidates_raw:
             if not isinstance(cand, Mapping):
                 raise GatewayConfigError(f"combo {combo_id!r} candidate must be a mapping")
             cand_conn = _required_str(cand, "connection", f"combo {combo_id!r} candidate")
             cand_model = _required_str(cand, "model", f"combo {combo_id!r} candidate")
             _validate_combo_candidate(combo_id, cand_conn, cand_model, connections, providers)
+            candidate_key = (cand_conn, cand_model)
+            if candidate_key in seen_candidates:
+                raise GatewayConfigError(f"combo {combo_id!r} has duplicate candidate {candidate_key!r}")
+            seen_candidates.add(candidate_key)
             candidates.append(ComboCandidate(connection_id=cand_conn, model_id=cand_model))
 
         scoring = _build_scoring(body.get("scoring"), combo_id)
@@ -482,12 +505,19 @@ def _build_tiers(
             if not isinstance(tier_candidates_raw, list) or not tier_candidates_raw:
                 raise GatewayConfigError(f"combo {combo_id!r} tier {tier_id!r} candidates must be a non-empty list")
             cands: list[ComboCandidate] = []
+            seen_candidates: set[tuple[str, str]] = set()
             for cand in tier_candidates_raw:
                 if not isinstance(cand, Mapping):
                     raise GatewayConfigError(f"combo {combo_id!r} tier {tier_id!r} candidate must be a mapping")
                 cand_conn = _required_str(cand, "connection", f"combo {combo_id!r} tier {tier_id!r} candidate")
                 cand_model = _required_str(cand, "model", f"combo {combo_id!r} tier {tier_id!r} candidate")
                 _validate_combo_candidate(combo_id, cand_conn, cand_model, connections, providers)
+                candidate_key = (cand_conn, cand_model)
+                if candidate_key in seen_candidates:
+                    raise GatewayConfigError(
+                        f"combo {combo_id!r} tier {tier_id!r} has duplicate candidate {candidate_key!r}"
+                    )
+                seen_candidates.add(candidate_key)
                 cands.append(ComboCandidate(connection_id=cand_conn, model_id=cand_model))
             tier_candidates = tuple(cands)
         tier_strategy = _optional_str(tier_body, "strategy", f"combo {combo_id!r} tier {tier_id!r}")
@@ -515,9 +545,27 @@ def _validate_router(
     connections: dict[str, Connection],
     deployments: dict[str, Deployment],
 ) -> None:
-    default_model = router.get("default_model")
-    if default_model is None:
+    for key in ("cache_ttl_seconds", "max_concurrent_upstream", "quota_cooldown_seconds"):
+        if key not in router:
+            continue
+        value = router[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise GatewayConfigError(f"router.{key} must be a non-negative int")
+    for key in ("retry_base_delay", "retry_max_delay"):
+        if key not in router:
+            continue
+        value = router[key]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or value < 0
+        ):
+            raise GatewayConfigError(f"router.{key} must be a finite non-negative number")
+
+    if "default_model" not in router:
         return
+    default_model = router.get("default_model")
     if not isinstance(default_model, str) or not default_model:
         raise GatewayConfigError("router.default_model must be a non-empty string")
     base_id, tier_id = _parse_model_tier(default_model)

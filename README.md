@@ -499,17 +499,20 @@ uvicorn router.main:app --app-dir src --host 0.0.0.0 --port 4100 --reload
 
 When `REDIS_URL` is unset, the router uses an in-memory session store. That is
 useful for tests and local development, but production should use Redis.
+Transient Redis session read or write failures are logged and fall back to
+cold routing without failing the upstream chat request.
 
 Quality checks:
 
 ```bash
 python3 -m pytest -q
+node --test src/clients/opencode_plugin/index.test.mjs
 python3 -m ruff check .
 python3 -m ruff format --check .
 python3 -m mypy
 ```
 
-Coverage is configured with an 80% minimum:
+Coverage includes both Python services and is configured with an 80% minimum:
 
 ```bash
 python3 -m pytest --cov -q

@@ -35,10 +35,13 @@ jobs:
         run: python -m ruff check .
 
       - name: Type check
-        run: python -m mypy src/router
+        run: python -m mypy
 
-      - name: Test
-        run: python -m pytest --cov=router --cov-fail-under=80 src/router/tests
+      - name: Test Python services
+        run: python -m pytest --cov -q
+
+      - name: Test OpenCode plugin
+        run: node --test src/clients/opencode_plugin/index.test.mjs
 
       - name: Audit dependencies
         run: python -m pip_audit -r src/router/requirements.txt -r src/router/requirements-dev.txt

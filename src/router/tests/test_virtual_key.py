@@ -22,7 +22,14 @@ def _env(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_virtual_key_is_forwarded_to_litellm(monkeypatch, simple_route_config_path: str):
+@pytest.mark.parametrize(
+    ("authorization", "session_id"),
+    [(f"Bearer {VIRTUAL_KEY}", "virtual-key"), (MASTER_KEY, "master-key")],
+    ids=["virtual", "master"],
+)
+async def test_authorization_key_is_forwarded_to_litellm(
+    monkeypatch, simple_route_config_path: str, authorization, session_id
+):
     seen = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -40,12 +47,13 @@ async def test_virtual_key_is_forwarded_to_litellm(monkeypatch, simple_route_con
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/chat/completions",
-            headers={"Authorization": f"Bearer {VIRTUAL_KEY}", "X-Session-Id": "vkey-forward"},
+            headers={"Authorization": authorization, "X-Session-Id": session_id},
             json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert response.status_code == 200
-    assert seen["auth"] == f"Bearer {VIRTUAL_KEY}"
+    assert seen["auth"] == authorization
+    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"
 
 
 @pytest.mark.asyncio
@@ -87,28 +95,3 @@ async def test_virtual_key_allowlist_403_is_surfaced(monkeypatch, simple_route_c
     body = response.json()
     assert "key_model_access_denied" in json.dumps(body)
     assert response.headers.get("X-Gateway-Fallback-Count") == "0"
-
-
-@pytest.mark.asyncio
-async def test_master_key_smoke_still_works(monkeypatch, simple_route_config_path: str):
-    async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers.get("authorization") == MASTER_KEY
-        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
-
-    _env(monkeypatch, ENV_ALL)
-    app = create_app(
-        litellm_base_url="http://litellm:4000",
-        redis_url=None,
-        transport=httpx.MockTransport(handler),
-        config_path=simple_route_config_path,
-    )
-
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": MASTER_KEY, "X-Session-Id": "master-smoke"},
-            json={"model": "coder", "messages": [{"role": "user", "content": "hi"}]},
-        )
-
-    assert response.status_code == 200
-    assert response.headers["X-Gateway-Served-Deployment"] == "ollama-cloud.kimi-k2.7-code"

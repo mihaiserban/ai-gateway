@@ -1,9 +1,10 @@
+import asyncio
 import json
 
 import httpx
 import pytest
 
-from router.main import create_app
+from router.main import _streaming_response, create_app
 from router.usage_events import UsageEvent
 
 SSE_BODY = b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: {"choices":[{"delta":{"content":" world"}}]}\n\ndata: [DONE]\n\n'
@@ -143,6 +144,30 @@ class ChunkStream(httpx.AsyncByteStream):
             yield chunk
 
 
+class BlockingStream(httpx.AsyncByteStream):
+    def __init__(self, started: asyncio.Event, release: asyncio.Event) -> None:
+        self.started = started
+        self.release = release
+
+    async def __aiter__(self):
+        self.started.set()
+        await self.release.wait()
+        yield SSE_BODY
+
+
+class TrackingSemaphore(asyncio.Semaphore):
+    def __init__(self) -> None:
+        super().__init__(1)
+        self.acquire_calls = 0
+        self.second_acquire_attempted = asyncio.Event()
+
+    async def acquire(self) -> bool:
+        self.acquire_calls += 1
+        if self.acquire_calls == 2:
+            self.second_acquire_attempted.set()
+        return await super().acquire()
+
+
 @pytest.mark.asyncio
 async def test_chat_stream_extracts_usage_from_sse(monkeypatch, simple_route_config_path: str):
     sink = FakeSink()
@@ -226,30 +251,100 @@ async def test_chat_stream_no_usage_in_sse_records_none(monkeypatch, simple_rout
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_aborted_still_emits_usage_event(monkeypatch, simple_route_config_path: str):
-    sink = FakeSink()
+async def test_aborted_stream_closes_upstream_and_runs_callback():
+    callback_payloads = []
+
+    async def on_close(payload):
+        callback_payloads.append(payload)
+
+    upstream = httpx.Response(
+        200,
+        stream=ChunkStream([SSE_WITH_USAGE]),
+        headers={"content-type": "text/event-stream"},
+    )
+    response = _streaming_response(upstream, on_close=on_close)
+
+    assert await anext(response.body_iterator) == SSE_WITH_USAGE
+    await response.body_iterator.aclose()
+
+    assert upstream.is_closed is True
+    assert callback_payloads == [{"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}]
+
+
+@pytest.mark.asyncio
+async def test_upstream_concurrency_limit_covers_full_stream_lifetime(monkeypatch, simple_route_config_path: str):
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=SSE_WITH_USAGE, headers={"content-type": "text/event-stream"})
+        nonlocal calls
+        calls += 1
+        started = first_started if calls == 1 else second_started
+        return httpx.Response(
+            200,
+            stream=BlockingStream(started, release),
+            headers={"content-type": "text/event-stream"},
+        )
 
     app = _app(monkeypatch, simple_route_config_path, httpx.MockTransport(handler))
-    app.state.usage_sink = sink
+    semaphore = TrackingSemaphore()
+    app.state.upstream_semaphore = semaphore
+    payload = {"model": "kimi-k2.7-code", "messages": [], "stream": True}
 
-    async with (
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
-        client.stream(
-            "POST",
-            "/v1/chat/completions",
-            headers={"Authorization": "Bearer test", "X-Session-Id": "stream-abort"},
-            json={"model": "kimi-k2.7-code", "messages": [{"role": "user", "content": "hi"}], "stream": True},
-        ) as response,
-    ):
-        assert response.status_code == 200
-        try:
-            async for _chunk in response.aiter_bytes(1):
-                break
-        except Exception:
-            pass
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        first = asyncio.create_task(client.post("/v1/chat/completions", json=payload))
+        await asyncio.wait_for(first_started.wait(), timeout=1)
+        second = asyncio.create_task(client.post("/v1/chat/completions", json=payload))
+        await asyncio.wait_for(semaphore.second_acquire_attempted.wait(), timeout=1)
+        assert second_started.is_set() is False
+        assert calls == 1
+        release.set()
+        responses = await asyncio.gather(first, second)
 
-    assert len(sink.events) == 1
-    assert sink.events[0].stream is True
+    assert [response.status_code for response in responses] == [200, 200]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_session_write_closes_stream_and_releases_concurrency_slot(
+    monkeypatch, simple_route_config_path: str
+):
+    session_write_started = asyncio.Event()
+    upstream_response = None
+
+    class BlockingSessionStore:
+        async def get(self, session_id):
+            return None
+
+        async def set(self, session_id, value, ttl_seconds):
+            session_write_started.set()
+            await asyncio.Event().wait()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal upstream_response
+        upstream_response = httpx.Response(
+            200,
+            stream=ChunkStream([SSE_BODY]),
+            headers={"content-type": "text/event-stream"},
+        )
+        return upstream_response
+
+    app = _app(monkeypatch, simple_route_config_path, httpx.MockTransport(handler))
+    semaphore = asyncio.Semaphore(1)
+    app.state.upstream_semaphore = semaphore
+    app.state.session_store = BlockingSessionStore()
+    payload = {"model": "kimi-k2.7-code", "messages": [], "stream": True}
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        request = asyncio.create_task(
+            client.post("/v1/chat/completions", headers={"X-Session-Id": "cancelled"}, json=payload)
+        )
+        await asyncio.wait_for(session_write_started.wait(), timeout=1)
+        request.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request
+
+    assert upstream_response is not None
+    assert upstream_response.is_closed is True
+    assert semaphore.locked() is False

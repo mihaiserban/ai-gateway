@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from router.routing import DeploymentRuntime, ScoringWeights
 from router.routing_state import GatewayRoutingState
@@ -46,3 +47,20 @@ def test_missing_scoring_weights_use_defaults():
     deployments = _deployments()
     ordered = state.order_deployments(["a", "b"], deployments, weights=None, now=1000.0)
     assert ordered == ["a", "b"]
+
+
+def test_concurrent_attempt_updates_do_not_corrupt_counters():
+    state = GatewayRoutingState()
+
+    def complete_attempt(_index):
+        token = state.start_attempt("a")
+        state.finish_attempt(token, status=200, latency_ms=10)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(complete_attempt, range(500)))
+
+    snapshot = state.snapshot()["deployments"]["a"]
+    assert snapshot["active"] == 0
+    assert snapshot["attempts"] == 500
+    assert snapshot["successes"] == 500
+    assert snapshot["retryable_failures"] == 0
